@@ -6,12 +6,13 @@ jdk:
 - secure: Xu6tVOI4uxOGV0hP7qZs8PddJ3Rh9I+ddJHotJP/yAEve0ZZtco0zqTJwTyDGrzYTjht8tjIKicjqvY6hqUuN1fEHoJGPMJSerDEsO+xL4AumwYf+gpOyLuF+OSlj8XZCO1s8OjRXSnrHg1GPu8zWEtylfrizOIl7lIv0oc9BljoUF4jKlqLqouHrBJMszdQRV2BOzVhv12oebbQ0BF0/kRta2oSpxKsiuA66wSRvTaqb5Idz2hpP1HPdk6TQu8J+grq38NLgBGt0n727jpQmPHa/c8p8/Zhvdjm3Lyg69/iBfma1jRYzDOFFjRjzHK7waHRho1OHZnIvrSKpNtfRg==
 
 before_script:
+  - apt-get install jq -y
   - if [[ $SHIPPABLE_JDK_VERSION == "oraclejdk8" ]] ; then export JAVA_HOME="/usr/lib/jvm/java-8-oracle"; export PATH="$PATH:/usr/lib/jvm/java-8-oracle/bin"; export java_path="/usr/lib/jvm/java-8-oracle/jre/bin/java"; fi
   - update-alternatives --set java $java_path
   - java -version
 
 script:
-   - mvn test clean install
+   - mvn clean test install
 
  after_success:
-   - if [ "$BRANCH" == "master" -a "$PULL_REQUEST" == "false" ] ; then export BUILD_DATE=`date`; curl -POST -u inventid-deploy:$GITHUB_PASS https://api.github.com/repos/inventid/rfid-reader2keyboard/releases -d "{\"tag_name\":\"v${BUILD_NUMBER}\", \"name\":\"Build of $BUILD_DATE ($COMMIT)\"}" -H "Content-Type: application/json" -H "Accept: application/json"; fi
+   - if [ "$BRANCH" == "master" -a "$PULL_REQUEST" == "false" ] ; then export BUILD_DATE=`date`; export DATA=`curl -POST -u inventid-deploy:$GITHUB_PASS https://api.github.com/repos/inventid/rfid-reader2keyboard/releases -d "{\"tag_name\":\"v${BUILD_NUMBER}\", \"name\":\"Build of $BUILD_DATE ($COMMIT)\"}" -H "Content-Type: application/json" -H "Accept: application/json"` && export RELEASE_ID=`echo $DATA | jq '.id'` && export UPLOAD_URL=`echo $DATA | jq '.upload_url' | sed s/\{\?name\}/\?name=rfid-reader2keyboard.jar/g | sed s/\"//g` && echo $RELEASE_ID && curl -POST -u inventid-deploy:$GITHUB_PASS $UPLOAD_URL -H "Content-Type: application/java-archive" --data-binary @target/rfid-reader2keyboard-1.0-SNAPSHOT.jar; fi
