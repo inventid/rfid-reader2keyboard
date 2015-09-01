@@ -16,7 +16,7 @@ import com.google.common.collect.Lists;
  */
 public class Read extends Thread {
 
-	private static final String TERMINAL_REQUIRED = "ACS ACR122U PICC Interface";
+	private static final String TERMINAL_REQUIRED = "ACR122";
 	private static final byte[] READ_COMMAND = new byte[] { (byte) 0xFF, (byte) 0xCA, (byte) 0x00,
 			(byte) 0x00, (byte) 0x00 };
 
@@ -44,7 +44,7 @@ public class Read extends Thread {
 			System.out.println("Trying to attach to " + TERMINAL_REQUIRED);
 			for (int i = 0; i < terminals.size(); i++) {
 				System.out.println(terminals.get(i));
-				if (terminals.get(i).getName().equals(TERMINAL_REQUIRED)) {
+				if (terminals.get(i).getName().contains(TERMINAL_REQUIRED)) {
 					terminal = terminals.get(i);
 				}
 			}

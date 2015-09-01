@@ -7,3 +7,4 @@ export BUILD_DATE=`date` && \
    echo $RELEASE_ID && \
    curl -POST -u inventid-deploy:$GITHUB_PASS $UPLOAD_URL -H "Content-Type: application/java-archive" --data-binary @target/rfid-reader2keyboard-1.0-SNAPSHOT.jar
 
+env
