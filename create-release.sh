@@ -6,5 +6,3 @@ export BUILD_DATE=`date` && \
    export UPLOAD_URL=`echo $DATA | jq '.upload_url' | sed s/\{\?name\}/\?name=rfid-reader2keyboard.jar/g | sed s/\"//g` && \
    echo $RELEASE_ID && \
    curl -POST -u inventid-deploy:$GITHUB_PASS $UPLOAD_URL -H "Content-Type: application/java-archive" --data-binary @target/rfid-reader2keyboard-1.0-SNAPSHOT.jar
-
-env
