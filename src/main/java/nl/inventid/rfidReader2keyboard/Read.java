@@ -17,6 +17,7 @@ import com.google.common.collect.Lists;
  */
 public class Read {
 
+	private static int scanCount = 0;
 	private static final List<String> TERMINAL_PREFERENCES = new ArrayList<>();
 	private static final byte[] READ_COMMAND = new byte[] { (byte) 0xFF, (byte) 0xCA, (byte) 0x00,
 			(byte) 0x00, (byte) 0x00 };
@@ -120,7 +121,7 @@ public class Read {
 
 			try {
 				System.out.println("Waiting for a card...");
-				// method holds indefinetely until a card was detected
+				// method holds indefinitely until a card was detected
 				if (!terminal.isCardPresent()) {
 					terminal.waitForCardPresent(0);
 				}
@@ -129,6 +130,8 @@ public class Read {
 				Card card = terminal.connect("T=1");
 				CardChannel channel = card.getBasicChannel();
 				System.out.println("Card detected...");
+				Read.scanCount++;
+				System.out.println("Scan count is now " + Read.scanCount);
 
 				// Send data and retrieve output
 				uid = send(READ_COMMAND, channel);
@@ -153,9 +156,7 @@ public class Read {
 				System.err.println("No card was found while scanning");
 			}
 			catch (Exception e) {
-				// Set boldface for error
 				System.err.println("Something went wrong. Remove card and try again.");
-				// Sleep 0.5 seconds to allow the operator to check
 				e.printStackTrace();
 			}
 			finally {
