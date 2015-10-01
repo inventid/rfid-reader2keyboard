@@ -33,6 +33,7 @@ public class Read {
 				"The most likely reason you see this is in order to resolve any issue you ay have found. Please follow"
 						+ " the instructions of inventid support and send these lines to the given email address");
 		Read reader = new Read();
+		reader.startTerminalLoop();
 		reader.loop();
 		System.out.println("inventid RFID capturing is now inactive. You can close this dialog");
 	}
@@ -67,6 +68,9 @@ public class Read {
 		TERMINAL_PREFERENCES.add(""); // Fuck, attach to anything (SHOULD BE LAST)
 	}
 
+	public void startTerminalLoop() {
+		(new Thread(new TerminalDetector())).start();
+	}
 	/*
 	 * In face the constructor does all the work.
 	 * First a keyboardrobot is initialized
