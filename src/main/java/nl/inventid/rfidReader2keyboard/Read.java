@@ -126,9 +126,9 @@ public class Read {
 			try {
 				System.out.println("Waiting for a card...");
 				// method holds indefinitely until a card was detected
-				if (!terminal.isCardPresent()) {
-					terminal.waitForCardPresent(0);
-				}
+//				if (!terminal.isCardPresent()) {
+//					terminal.waitForCardPresent(0);
+//				}
 
 				// Connect to card and read
 				Card card = terminal.connect("T=1");
@@ -163,6 +163,12 @@ public class Read {
 			catch (CardException e) {
 				// Something went wrong when scanning the card
 				System.err.println("No card was found while scanning");
+//				try {
+//				Thread.sleep(1000);
+//			}
+//			catch (InterruptedException e1) {
+//				e1.printStackTrace();
+//			}
 			}
 			catch (Exception e) {
 				System.err.println("Something went wrong. Remove card and try again.");
