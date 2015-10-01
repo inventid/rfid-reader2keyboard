@@ -150,10 +150,15 @@ public class Read {
 					System.out.println("Card detected... Same card");
 				}
 				// Emulate a keyboard and "type" the uid, followed by a newline
+				System.out.println("will type");
 				keyboard.type(uid);
 				keyboard.type("\n");
 
-				terminal.waitForCardAbsent(1000);
+				System.out.println("typed stuff");
+				card.disconnect(false);
+				System.out.println("disconnected card");
+				Thread.sleep(1000);
+				System.out.println("ready for next card");
 			}
 			catch (CardException e) {
 				// Something went wrong when scanning the card
