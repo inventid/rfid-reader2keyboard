@@ -163,6 +163,7 @@ public class Read {
 			catch (CardException e) {
 				// Something went wrong when scanning the card
 				System.err.println("No card was found while scanning");
+				e.printStackTrace();
 //				try {
 //				Thread.sleep(1000);
 //			}
