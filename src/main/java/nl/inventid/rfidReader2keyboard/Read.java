@@ -7,7 +7,11 @@ import javax.smartcardio.CardTerminal;
 import javax.smartcardio.TerminalFactory;
 
 import java.nio.ByteBuffer;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.time.temporal.TemporalUnit;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 
 import com.google.common.collect.Lists;
@@ -22,6 +26,8 @@ public class Read {
 	private static final byte[] READ_COMMAND = new byte[] { (byte) 0xFF, (byte) 0xCA, (byte) 0x00,
 			(byte) 0x00, (byte) 0x00 };
 
+	private Instant previousInstant;
+
 	public static void main(String[] args) {
 		System.out.println("Starting rfid-reader2keyboard");
 		System.out.println("The following terminals were detected:");
@@ -33,7 +39,7 @@ public class Read {
 				"The most likely reason you see this is in order to resolve any issue you ay have found. Please follow"
 						+ " the instructions of inventid support and send these lines to the given email address");
 		Read reader = new Read();
-		reader.startTerminalLoop();
+		//		reader.startTerminalLoop();
 		reader.loop();
 		System.out.println("inventid RFID capturing is now inactive. You can close this dialog");
 	}
@@ -59,7 +65,8 @@ public class Read {
 
 	public Read() {
 		setupPrefs();
-		prepare();
+		//		prepare();
+		previousInstant = Instant.now();
 	}
 
 	private void setupPrefs() {
@@ -71,6 +78,7 @@ public class Read {
 	public void startTerminalLoop() {
 		(new Thread(new TerminalDetector())).start();
 	}
+
 	/*
 	 * In face the constructor does all the work.
 	 * First a keyboardrobot is initialized
@@ -111,10 +119,10 @@ public class Read {
 	}
 
 	private void loop() {
-		if (terminal == null) {
-			System.err.println("No terminal connected, loops is exiting");
-			return;
-		}
+		//		if (terminal == null) {
+		//			System.err.println("No terminal connected, loops is exiting");
+		//			return;
+		//		}
 
 		String uid;
 		// Random String; no UID of any chip. Still true though
@@ -124,11 +132,13 @@ public class Read {
 			// Establish a connection with the card
 
 			try {
+				Thread.sleep(10);
+				prepare();
 				System.out.println("Waiting for a card...");
 				// method holds indefinitely until a card was detected
-//				if (!terminal.isCardPresent()) {
-//					terminal.waitForCardPresent(0);
-//				}
+				//				if (!terminal.isCardPresent()) {
+				//					terminal.waitForCardPresent(0);
+				//				}
 
 				// Connect to card and read
 				Card card = terminal.connect("T=1");
@@ -142,12 +152,21 @@ public class Read {
 				// If successful, the output will end with 9000, so we strip that
 				uid = uid.substring(0, uid.length() - 4);
 
-				if (!uid.equals(oldUID)) {
+				if (uid.length() != 8) {
+					System.out.println("Empty card detected?");
+					Thread.sleep(500);
+					continue;
+				}
+				else if (!uid.equals(oldUID) || Instant.now().minus(1, ChronoUnit.SECONDS).isAfter(previousInstant)) {
 					System.out.println("Card detected... UID: " + uid);
+					previousInstant = Instant.now();
 					oldUID = uid;
 				}
 				else {
 					System.out.println("Card detected... Same card");
+					card.disconnect(false);
+					Thread.sleep(500);
+					continue;
 				}
 				// Emulate a keyboard and "type" the uid, followed by a newline
 				System.out.println("will type");
@@ -157,31 +176,30 @@ public class Read {
 				System.out.println("typed stuff");
 				card.disconnect(false);
 				System.out.println("disconnected card");
-				Thread.sleep(1000);
 				System.out.println("ready for next card");
 			}
 			catch (CardException e) {
 				// Something went wrong when scanning the card
 				System.err.println("No card was found while scanning");
-				e.printStackTrace();
-//				try {
-//				Thread.sleep(1000);
-//			}
-//			catch (InterruptedException e1) {
-//				e1.printStackTrace();
-//			}
+				//				e.printStackTrace();
+				//				try {
+				//				Thread.sleep(1000);
+				//			}
+				//			catch (InterruptedException e1) {
+				//				e1.printStackTrace();
+				//			}
 			}
 			catch (Exception e) {
 				System.err.println("Something went wrong. Remove card and try again.");
 				e.printStackTrace();
 			}
 			finally {
-				try {
-					Thread.sleep(500);
-				}
-				catch (InterruptedException e) {
-					System.err.println("Got interrupted while sleeping! Strange!");
-				}
+				//				try {
+				//					Thread.sleep(500);
+				//				}
+				//				catch (InterruptedException e) {
+				//					System.err.println("Got interrupted while sleeping! Strange!");
+				//				}
 			}
 		}
 	}

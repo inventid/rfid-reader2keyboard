@@ -341,7 +341,7 @@ public class Keyboard {
                 doType(KeyEvent.VK_SPACE);
                 break;
             default:
-                System.out.println("Invalid char detected: "+character);
+                System.err.println("Invalid char detected: "+character);
                 //510C692E9000throw new IllegalArgumentException("Cannot type character " + character);
         }
     }
