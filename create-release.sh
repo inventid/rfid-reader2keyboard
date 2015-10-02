@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Fail hard on ANY error here!
+set -e
+
 export BUILD_DATE=`date` && \
    export DATA=`curl -POST -u inventid-deploy:$GITHUB_PASS https://api.github.com/repos/inventid/rfid-reader2keyboard/releases -d "{\"tag_name\": \"v${BUILD_NUMBER}\",\"name\":\"Build of ${BUILD_DATE} (${COMMIT})\"}" -H "Content-Type: application/json" -H "Accept: application/json"` && \
    export RELEASE_ID=`echo $DATA | jq '.id'` && \
