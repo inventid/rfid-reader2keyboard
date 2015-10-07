@@ -11,7 +11,7 @@ public class TerminalDetector implements Runnable {
 		while(!interrupted) {
 			System.out.println(Read.listTerminals());
 			try {
-				Thread.sleep(10000);
+				Thread.sleep(30000);
 			}
 			catch (InterruptedException e) {
 				e.printStackTrace();
