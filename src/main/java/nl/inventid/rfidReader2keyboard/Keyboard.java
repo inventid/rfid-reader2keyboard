@@ -17,7 +17,7 @@ public class Keyboard {
         try {
             this.robot = new Robot();
         } catch (Exception e) {
-            System.out.println("Something went wrong when trying to initizalize the type robot");
+            System.err.println("Something went wrong when trying to initizalize the type robot");
             e.printStackTrace();
             System.exit(888);
         }

@@ -18,7 +18,7 @@ before_script:
   - java -version
 
 script:
-   - mvn clean test install
+   - mvn clean test install package
 
 after_success:
   - if [ "$BRANCH" == "master" -a "$PULL_REQUEST" == "false" ] ; then bash ./create-release.sh; fi
