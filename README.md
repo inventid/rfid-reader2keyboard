@@ -4,7 +4,9 @@
 
 This is a very simple maven project which reads the code of your rfid chip, and types it in any field.
 
-To run, use `mvn clean install` which will create a jar file which is executable.
+To run, use `mvn clean install package` which will create two jar files which are executable.
+One of these is lean, the other includes all dependencies.
+The latter one should be used by clients.
 Alternatively, you can run `mvn clean install exec:java` to execute things directly from the CLI.
 
 ## Releases
