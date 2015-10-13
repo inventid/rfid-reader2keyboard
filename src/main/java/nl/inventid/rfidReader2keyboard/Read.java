@@ -102,7 +102,7 @@ public class Read {
 		TERMINAL_PREFERENCES.add("ACR122"); // That'll do (Windows does not include the U)
 		TERMINAL_PREFERENCES.add(""); // Fuck, attach with anything (SHOULD BE LAST)
 
-		reconnector = new Reconnector(this, 5); // Reconnect every five seconds
+		reconnector = new Reconnector(this, 2); // Reconnect every two seconds
 		executorService.scheduleAtFixedRate(reconnector, 1, 1, TimeUnit.SECONDS);
 	}
 
