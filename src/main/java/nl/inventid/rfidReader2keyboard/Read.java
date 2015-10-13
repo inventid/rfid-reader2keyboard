@@ -15,36 +15,43 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 import com.google.common.collect.Lists;
+import lombok.Setter;
 import org.apache.commons.codec.binary.Hex;
 
 /**
  * This little program handles the reading of the RFID miFare chips.
-<<<<<<< Updated upstream
-=======
- * An exit code of 0 means everything went well An exit code of 1 means no suitable terminal was found An exit code of 2
- * means no type robot could be started
->>>>>>> Stashed changes
+ * An exit code of 0 means everything went well. An exit code of 1 means no suitable terminal was found. An exit code of
+ * 2 means no type robot could be started.
  */
 public class Read {
 
 	private static final String NO_CONNECT = "connect() failed";
 	private static final String EMPTY_CODE = "Scanned code was empty";
 	private static final String NO_CARD = "sun.security.smartcardio.PCSCException: SCARD_E_NO_SMARTCARD";
-	private static final String READER_UNAVAILABLE = "sun.security.smartcardio.PCSCException: SCARD_E_READER_UNAVAILABLE";
+	private static final String READER_UNAVAILABLE =
+			"sun.security.smartcardio.PCSCException: SCARD_E_READER_UNAVAILABLE";
 	private static final String FAILED_CARD_TRANSACTION =
 			"sun.security.smartcardio.PCSCException: SCARD_E_NOT_TRANSACTED";
 	private static final CommandAPDU READ_COMMAND = new CommandAPDU(new byte[] { (byte) 0xFF, (byte) 0xCA, (byte) 0x00,
 			(byte) 0x00, (byte) 0x00 });
 
 	private static final List<String> TERMINAL_PREFERENCES = new ArrayList<>();
-	private static final Map<String, Integer> errorMap = new HashMap();
+	private static final Map<String, Integer> errorMap = new HashMap<>();
 	private static final String CARD_READ_FAILURE = "Card read failure";
-	public static TerminalDetector detectorLoop;
 
+	private static TerminalDetector detectorLoop;
 	private static ErrorLogger errorLogger;
+	private static ScheduledThreadPoolExecutor executorService;
+
+	private final Reconnector reconnector;
+
 	private CardTerminal terminal;
+
+	@Setter
 	private Instant lastScan;
 
 	public static void main(String[] args) {
@@ -58,20 +65,18 @@ public class Read {
 				"The most likely reason you see this is in order to resolve any issue you ay have found. Please follow"
 						+ " the instructions of inventid support and send these lines to the given email address");
 
+		executorService = new ScheduledThreadPoolExecutor(3);
 		errorLogger = new ErrorLogger();
-		(new Thread(errorLogger)).start();
-
 		detectorLoop = new TerminalDetector();
-		(new Thread(detectorLoop)).start();
+		executorService.scheduleAtFixedRate(errorLogger, 10, 30, TimeUnit.SECONDS);
+		executorService.scheduleAtFixedRate(detectorLoop, 10, 15, TimeUnit.SECONDS);
 
-		Read reader = new Read();
+		Read reader = new Read(executorService);
 		reader.loop();
 
 		Runtime.getRuntime().addShutdownHook(new Thread() {
 			public void run() {
-				detectorLoop.stop();
-				errorLogger.printErrorMap();
-				errorLogger.stop();
+				executorService.shutdownNow();
 				System.out.println("inventid RFID capturing is now inactive. You can close this dialog");
 			}
 		});
@@ -84,20 +89,21 @@ public class Read {
 	 */
 	public static List<CardTerminal> listTerminals() {
 		// show the list of available terminals
-		TerminalFactory factory = TerminalFactory.getDefault();
 		try {
-			return factory.terminals().list();
+			return TerminalFactory.getDefault().terminals().list();
 		}
 		catch (Exception e) {
 			return Lists.newArrayList();
 		}
 	}
 
-	public Read() {
+	public Read(ScheduledThreadPoolExecutor executorService) {
 		TERMINAL_PREFERENCES.add("ACS ACR122U PICC Interface"); // Best match
 		TERMINAL_PREFERENCES.add("ACR122"); // That'll do (Windows does not include the U)
 		TERMINAL_PREFERENCES.add(""); // Fuck, attach with anything (SHOULD BE LAST)
 
+		reconnector = new Reconnector(this, 2); // Reconnect every two seconds
+		executorService.scheduleAtFixedRate(reconnector, 1, 1, TimeUnit.SECONDS);
 	}
 
 	/**
@@ -105,7 +111,7 @@ public class Read {
 	 *
 	 * @return a valid CardTerminal or halts the system if no match can be found
 	 */
-	public CardTerminal findAndConnectToTerminal() {
+	public void findAndConnectToTerminal() {
 		try {
 			// show the list of available terminals
 			TerminalFactory factory = TerminalFactory.getDefault();
@@ -119,8 +125,10 @@ public class Read {
 				System.out.println("Trying to attach to '" + requiredTerminal + "'");
 				for (int i = 0; i < terminals.size(); i++) {
 					if (terminals.get(i).getName().contains(requiredTerminal)) {
+						CardTerminal newTerminal = terminals.get(i);
 						System.out.println("Attached to '" + requiredTerminal + "'");
-						return terminals.get(i);
+						terminal = newTerminal;
+						return;
 					}
 				}
 			}
@@ -130,7 +138,7 @@ public class Read {
 			System.err.println("Unable to connect to RFID reader");
 			e.printStackTrace();
 		}
-		return null;
+		return;
 	}
 
 	/**
@@ -143,14 +151,11 @@ public class Read {
 	 * stability
 	 */
 	public void loop() {
-		terminal = findAndConnectToTerminal();
 
-		Reconnector reconnector = new Reconnector(this);
-		new Thread(reconnector).start();
+		findAndConnectToTerminal();
 
 		if (terminal == null) {
-			System.err.println("No terminal connected, loop is exiting");
-//			return;
+			System.err.println("No terminal connected!");
 		}
 		Keyboard keyboard = new Keyboard();
 
@@ -160,7 +165,6 @@ public class Read {
 		// Keep looping
 		while (true) {
 			try {
-				reconnector.setTerminal(terminal);
 				// Connect to card and read
 				Card card = terminal.connect("T=1");
 				CardChannel channel = card.getBasicChannel();
@@ -180,19 +184,17 @@ public class Read {
 				i++;
 				oldUID = uid;
 				lastScan = Instant.now();
-				reconnector.setLastScan(lastScan);
-				i++;
+				reconnector.setLastAction(lastScan);
 				card.disconnect(false);
 
 				System.out.println("ready for next card");
-				card.disconnect(false);
-				System.out.println("Test run: " + i);
+				System.out.println("Card scan run: " + i);
 			}
 			catch (CardException e) {
 				// Something went wrong when scanning the card
 				if (e.getMessage().equals(FAILED_CARD_TRANSACTION) || e.getMessage().equals(READER_UNAVAILABLE)) {
 					logError(e.getMessage());
-					terminal = findAndConnectToTerminal();
+					findAndConnectToTerminal();
 					continue;
 				}
 				// Card is not present while scanning
@@ -214,7 +216,7 @@ public class Read {
 				logError(e.getMessage());
 				e.printStackTrace();
 				System.out.println(e.getMessage());
-				terminal = findAndConnectToTerminal();
+				findAndConnectToTerminal();
 			}
 		}
 	}
@@ -249,42 +251,21 @@ public class Read {
 				(lastScan != null && lastScan.plus(1, ChronoUnit.SECONDS).isBefore(Instant.now()));
 	}
 
+	/**
+	 * Log an error by incrementing the value in the map by one
+	 *
+	 * @param errorCause the cause of the error
+	 */
 	private void logError(String errorCause) {
 		Integer newValue = errorMap.getOrDefault(errorCause, 0) + 1;
 		errorMap.put(errorCause, newValue);
-	}
-
-	public void setTerminal(CardTerminal terminal) {
-		this.terminal = terminal;
-	}
-
-	public void setLastScan(Instant lastScan) {
-		this.lastScan = lastScan;
 	}
 
 	/**
 	 * This is a very stupid innerclass, which simply prints the errorMap of the main class every 60 seconds
 	 */
 	private static class ErrorLogger implements Runnable {
-
-		private boolean interrupted;
-
 		public void run() {
-			while(!interrupted) {
-				printErrorMap();
-				try {
-					Thread.sleep(60000);
-				}
-				catch (InterruptedException e) {
-				}
-			}
-		}
-
-		public void stop() {
-			interrupted = true;
-		}
-
-		public void printErrorMap() {
 			System.out.println("Error map: " + errorMap.entrySet());
 		}
 	}
@@ -293,81 +274,39 @@ public class Read {
 	 * This is a very stupid innerclass, which simply prints the connected readers every 30 seconds
 	 */
 	private static class TerminalDetector implements Runnable {
-
-		private boolean interrupted;
-
 		public void run() {
-			while (!interrupted) {
-				System.out.println(Read.listTerminals());
-				try {
-					Thread.sleep(30000);
-				}
-				catch (InterruptedException e) {
-					stop();
-				}
-			}
-		}
-
-		public void stop() {
-			interrupted = true;
+			System.out.println(Read.listTerminals());
 		}
 	}
 
+	/**
+	 * This inner class simply attempts to reconnect to a terminal in case there were no scan actions for a few seconds
+	 * The JVM may lose the connection under such circumstances :(
+	 */
 	private static class Reconnector implements Runnable {
 
-		private static int RECONNECT_TIME = 5;
-
 		private final Read read;
-		private CardTerminal terminal;
-		private Instant lastScan;
-		private boolean interrupted;
 
-		public Reconnector(Read read) {
+		@Setter
+		private Instant lastAction;
+		private int reconnectTime;
+
+		public Reconnector(Read read, int reconnectTime) {
 			this.read = read;
+			this.reconnectTime = reconnectTime;
 			System.out.println("Reconnector started");
-		}
-
-		public void setTerminal(CardTerminal terminal) {
-			this.terminal = terminal;
-		}
-
-		public void setLastScan(Instant lastScan) {
-			this.lastScan = lastScan;
 		}
 
 		@Override
 		public void run() {
-			while (!interrupted) {
-				System.out.println("Runnign the reconnector loop");
-				if (lastScan != null && lastScan.plus(RECONNECT_TIME, ChronoUnit.SECONDS).isBefore(Instant.now())) {
-					System.out.println("Reconnect due to lack of scan actions");
-					terminal = read.findAndConnectToTerminal();
-					read.setTerminal(terminal);
-					Instant now = Instant.now();
-					read.setLastScan(now);
-					this.setLastScan(now);
-				}
-				else {
-					if (lastScan != null) {
-						System.out.println(lastScan);
-						System.out.println(lastScan.plus(RECONNECT_TIME, ChronoUnit.SECONDS).isBefore(Instant.now()));
-					}
-					else {
-						System.out.println("Everything is null");
-					}
-				}
-				try {
-					Thread.sleep(1000);
-				}
-				catch (InterruptedException e) {
-					stop();
-				}
+			Instant now = Instant.now();
+			if (lastAction == null ||
+					lastAction.plus(reconnectTime, ChronoUnit.SECONDS).isBefore(now)) {
+				System.out.println("Reconnect due to lack of scan actions");
+				read.findAndConnectToTerminal();
+				read.setLastScan(now);
+				this.setLastAction(now);
 			}
 		}
-
-		public void stop() {
-			interrupted = true;
-		}
 	}
-
 }
