@@ -21,6 +21,11 @@ import org.apache.commons.codec.binary.Hex;
 
 /**
  * This little program handles the reading of the RFID miFare chips.
+<<<<<<< Updated upstream
+=======
+ * An exit code of 0 means everything went well An exit code of 1 means no suitable terminal was found An exit code of 2
+ * means no type robot could be started
+>>>>>>> Stashed changes
  */
 public class Read {
 
@@ -39,6 +44,8 @@ public class Read {
 	public static TerminalDetector detectorLoop;
 
 	private static ErrorLogger errorLogger;
+	private CardTerminal terminal;
+	private Instant lastScan;
 
 	public static void main(String[] args) {
 		System.out.println("Starting rfid-reader2keyboard");
@@ -58,7 +65,6 @@ public class Read {
 		(new Thread(detectorLoop)).start();
 
 		Read reader = new Read();
-		reader.startTerminalLoop();
 		reader.loop();
 
 		Runtime.getRuntime().addShutdownHook(new Thread() {
@@ -94,20 +100,12 @@ public class Read {
 
 	}
 
-
-	public void startTerminalLoop() {
-
-	}
-
-	/*
-	 * In face the constructor does all the work.
-	 * First a keyboardrobot is initialized
-	 * The card terminal is connected to
-	 * Then a loop is initiated which loops indefinitely (with bounds on run-away)
-	 * The loop "types" the relevant data to the PC itself
-	 * Webapps handle the rest
+	/**
+	 * Find and connect to a terminal, based on the preferences in TERMINAL_PREFERENCES
+	 *
+	 * @return a valid CardTerminal or halts the system if no match can be found
 	 */
-	private CardTerminal findAndConnectToTerminal() {
+	public CardTerminal findAndConnectToTerminal() {
 		try {
 			// show the list of available terminals
 			TerminalFactory factory = TerminalFactory.getDefault();
@@ -135,8 +133,21 @@ public class Read {
 		return null;
 	}
 
-	private void loop() {
-		CardTerminal terminal = findAndConnectToTerminal();
+	/**
+	 * Do the actual work of the program by looping over it and writing/exceptioning In case you are looking at this
+	 * code and thinking "OMG why not just use the CardTerminal methods instead of catching?": There is a very good
+	 * reason: javax.smartcardio is buggy as fuck, so on some platform the `waitForCardPresent` and `waitForCardAbsent`
+	 * methods will not block, or block indefinitely under some conditions. Especially in combination with sleeping
+	 * code, this is a significant nightmare! Therefore we simply try to read from the card, and handle all exceptions.
+	 * In the exception handling, possibly we will reconnect to a terminal, if that is the best thing to do for
+	 * stability
+	 */
+	public void loop() {
+		terminal = findAndConnectToTerminal();
+
+		Reconnector reconnector = new Reconnector(this);
+		new Thread(reconnector).start();
+
 		if (terminal == null) {
 			System.err.println("No terminal connected, loop is exiting");
 //			return;
@@ -145,11 +156,11 @@ public class Read {
 
 		// Random String; no UID of any chip. Still true though
 		String oldUID = "inventid bravo!";
-		Instant lastScan = null;
 		int i = 0;
 		// Keep looping
 		while (true) {
 			try {
+				reconnector.setTerminal(terminal);
 				// Connect to card and read
 				Card card = terminal.connect("T=1");
 				CardChannel channel = card.getBasicChannel();
@@ -169,6 +180,10 @@ public class Read {
 				i++;
 				oldUID = uid;
 				lastScan = Instant.now();
+				reconnector.setLastScan(lastScan);
+				i++;
+				card.disconnect(false);
+
 				System.out.println("ready for next card");
 				card.disconnect(false);
 				System.out.println("Test run: " + i);
@@ -239,6 +254,17 @@ public class Read {
 		errorMap.put(errorCause, newValue);
 	}
 
+	public void setTerminal(CardTerminal terminal) {
+		this.terminal = terminal;
+	}
+
+	public void setLastScan(Instant lastScan) {
+		this.lastScan = lastScan;
+	}
+
+	/**
+	 * This is a very stupid innerclass, which simply prints the errorMap of the main class every 60 seconds
+	 */
 	private static class ErrorLogger implements Runnable {
 
 		private boolean interrupted;
@@ -260,6 +286,87 @@ public class Read {
 
 		public void printErrorMap() {
 			System.out.println("Error map: " + errorMap.entrySet());
+		}
+	}
+
+	/**
+	 * This is a very stupid innerclass, which simply prints the connected readers every 30 seconds
+	 */
+	private static class TerminalDetector implements Runnable {
+
+		private boolean interrupted;
+
+		public void run() {
+			while (!interrupted) {
+				System.out.println(Read.listTerminals());
+				try {
+					Thread.sleep(30000);
+				}
+				catch (InterruptedException e) {
+					stop();
+				}
+			}
+		}
+
+		public void stop() {
+			interrupted = true;
+		}
+	}
+
+	private static class Reconnector implements Runnable {
+
+		private static int RECONNECT_TIME = 5;
+
+		private final Read read;
+		private CardTerminal terminal;
+		private Instant lastScan;
+		private boolean interrupted;
+
+		public Reconnector(Read read) {
+			this.read = read;
+			System.out.println("Reconnector started");
+		}
+
+		public void setTerminal(CardTerminal terminal) {
+			this.terminal = terminal;
+		}
+
+		public void setLastScan(Instant lastScan) {
+			this.lastScan = lastScan;
+		}
+
+		@Override
+		public void run() {
+			while (!interrupted) {
+				System.out.println("Runnign the reconnector loop");
+				if (lastScan != null && lastScan.plus(RECONNECT_TIME, ChronoUnit.SECONDS).isBefore(Instant.now())) {
+					System.out.println("Reconnect due to lack of scan actions");
+					terminal = read.findAndConnectToTerminal();
+					read.setTerminal(terminal);
+					Instant now = Instant.now();
+					read.setLastScan(now);
+					this.setLastScan(now);
+				}
+				else {
+					if (lastScan != null) {
+						System.out.println(lastScan);
+						System.out.println(lastScan.plus(RECONNECT_TIME, ChronoUnit.SECONDS).isBefore(Instant.now()));
+					}
+					else {
+						System.out.println("Everything is null");
+					}
+				}
+				try {
+					Thread.sleep(1000);
+				}
+				catch (InterruptedException e) {
+					stop();
+				}
+			}
+		}
+
+		public void stop() {
+			interrupted = true;
 		}
 	}
 
