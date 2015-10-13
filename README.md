@@ -15,7 +15,7 @@ There are a number of issues with this part of the `javax` library:
 In general, this makes development quite hard and testing close to impossible.
 Timeouts may be triggered after several hours of correct functioning, or simply after a minute of idle time.
 
-This small program attempts to mediate these issues, such that scanning of cards is viable crossplatform within the JVM.
+This small program attempts to mediate these issues, such that scanning of cards is viable cross platform within the JVM.
 
 ## How to run
 

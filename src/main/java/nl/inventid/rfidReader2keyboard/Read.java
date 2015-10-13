@@ -23,8 +23,9 @@ import lombok.Setter;
 import org.apache.commons.codec.binary.Hex;
 
 /**
- * This little program handles the reading of the RFID miFare chips. An exit code of 0 means everything went well An
- * exit code of 1 means no suitable terminal was found An exit code of 2 means no type robot could be started
+ * This little program handles the reading of the RFID miFare chips.
+ * An exit code of 0 means everything went well. An exit code of 1 means no suitable terminal was found. An exit code of
+ * 2 means no type robot could be started.
  */
 public class Read {
 
@@ -88,9 +89,8 @@ public class Read {
 	 */
 	public static List<CardTerminal> listTerminals() {
 		// show the list of available terminals
-		TerminalFactory factory = TerminalFactory.getDefault();
 		try {
-			return factory.terminals().list();
+			return TerminalFactory.getDefault().terminals().list();
 		}
 		catch (Exception e) {
 			return Lists.newArrayList();
@@ -188,7 +188,7 @@ public class Read {
 				card.disconnect(false);
 
 				System.out.println("ready for next card");
-				System.out.println("Test run: " + i);
+				System.out.println("Card scan run: " + i);
 			}
 			catch (CardException e) {
 				// Something went wrong when scanning the card
@@ -253,6 +253,7 @@ public class Read {
 
 	/**
 	 * Log an error by incrementing the value in the map by one
+	 *
 	 * @param errorCause the cause of the error
 	 */
 	private void logError(String errorCause) {
