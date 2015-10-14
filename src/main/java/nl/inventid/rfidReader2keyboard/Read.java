@@ -19,15 +19,15 @@ import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 import com.google.common.collect.Lists;
+import lombok.Getter;
 import lombok.Setter;
 import org.apache.commons.codec.binary.Hex;
 
 /**
- * This little program handles the reading of the RFID miFare chips.
- * An exit code of 0 means everything went well. An exit code of 1 means no suitable terminal was found. An exit code of
- * 2 means no type robot could be started.
+ * This little program handles the reading of the RFID miFare chips. An exit code of 0 means everything went well. An
+ * exit code of 1 means no suitable terminal was found. An exit code of 2 means no type robot could be started.
  */
-public class Read {
+public class Read implements Runnable {
 
 	private static final String NO_CONNECT = "connect() failed";
 	private static final String EMPTY_CODE = "Scanned code was empty";
@@ -48,11 +48,16 @@ public class Read {
 	private static ScheduledThreadPoolExecutor executorService;
 
 	private final Reconnector reconnector;
+	private final Keyboard keyboard;
+	private final Object[] synchronizer = new Object[0];
 
+	private String oldUid;
 	private CardTerminal terminal;
+	private int i;
 
+	@Getter
 	@Setter
-	private Instant lastScan;
+	private Instant lastAction;
 
 	public static void main(String[] args) {
 		System.out.println("Starting rfid-reader2keyboard");
@@ -72,7 +77,7 @@ public class Read {
 		executorService.scheduleAtFixedRate(detectorLoop, 10, 15, TimeUnit.SECONDS);
 
 		Read reader = new Read(executorService);
-		reader.loop();
+		reader.startRunning();
 
 		Runtime.getRuntime().addShutdownHook(new Thread() {
 			public void run() {
@@ -92,7 +97,7 @@ public class Read {
 		try {
 			return TerminalFactory.getDefault().terminals().list();
 		}
-		catch (Exception e) {
+		catch (Throwable e) {
 			return Lists.newArrayList();
 		}
 	}
@@ -104,6 +109,9 @@ public class Read {
 
 		reconnector = new Reconnector(this, 2); // Reconnect every two seconds
 		executorService.scheduleAtFixedRate(reconnector, 1, 1, TimeUnit.SECONDS);
+
+		keyboard = new Keyboard();
+		findAndConnectToTerminal();
 	}
 
 	/**
@@ -113,32 +121,38 @@ public class Read {
 	 */
 	public void findAndConnectToTerminal() {
 		try {
-			// show the list of available terminals
-			TerminalFactory factory = TerminalFactory.getDefault();
-			List<CardTerminal> terminals = factory.terminals().list();
+			synchronized (synchronizer) {
+				// show the list of available terminals
+				TerminalFactory factory = TerminalFactory.getDefault();
+				List<CardTerminal> terminals = factory.terminals().list();
 
-			System.out.println("There are " + TERMINAL_PREFERENCES.size() + " possible terminal matches");
-			System.out.println("There are " + terminals.size() + " terminals attached to this machine");
+				System.out.println("There are " + TERMINAL_PREFERENCES.size() + " possible terminal matches");
+				System.out.println("There are " + terminals.size() + " terminals attached to this machine");
 
-			for (int j = 0; j < TERMINAL_PREFERENCES.size(); j++) {
-				String requiredTerminal = TERMINAL_PREFERENCES.get(j);
-				System.out.println("Trying to attach to '" + requiredTerminal + "'");
-				for (int i = 0; i < terminals.size(); i++) {
-					if (terminals.get(i).getName().contains(requiredTerminal)) {
-						CardTerminal newTerminal = terminals.get(i);
-						System.out.println("Attached to '" + requiredTerminal + "'");
-						terminal = newTerminal;
-						return;
+				for (int j = 0; j < TERMINAL_PREFERENCES.size(); j++) {
+					String requiredTerminal = TERMINAL_PREFERENCES.get(j);
+					System.out.println("Trying to attach to '" + requiredTerminal + "'");
+					for (int i = 0; i < terminals.size(); i++) {
+						if (terminals.get(i).getName().contains(requiredTerminal)) {
+							CardTerminal newTerminal = terminals.get(i);
+							System.out.println("Attached to '" + requiredTerminal + "'");
+							terminal = newTerminal;
+							return;
+						}
 					}
 				}
 			}
 		}
-		catch (Exception e) {
+		catch (Throwable e) {
 			// Probably no reader found...
 			System.err.println("Unable to connect to RFID reader");
 			e.printStackTrace();
 		}
 		return;
+	}
+
+	public void startRunning() {
+		executorService.scheduleWithFixedDelay(this, 1000, 100, TimeUnit.MILLISECONDS);
 	}
 
 	/**
@@ -150,30 +164,23 @@ public class Read {
 	 * In the exception handling, possibly we will reconnect to a terminal, if that is the best thing to do for
 	 * stability
 	 */
-	public void loop() {
-
-		findAndConnectToTerminal();
-
+	public void run() {
 		if (terminal == null) {
 			System.err.println("No terminal connected!");
+			return;
 		}
-		Keyboard keyboard = new Keyboard();
-
-		// Random String; no UID of any chip. Still true though
-		String oldUID = "inventid bravo!";
-		int i = 0;
-		// Keep looping
-		while (true) {
-			try {
+		try {
+			synchronized (synchronizer) {
 				// Connect to card and read
 				Card card = terminal.connect("T=1");
 				CardChannel channel = card.getBasicChannel();
 
 				// Send data and retrieve output
 				String uid = getCardUid(channel);
+				lastAction = Instant.now();
 
-				if (!isNewCard(uid, oldUID, lastScan)) {
-					continue;
+				if (!isNewCard(uid, oldUid, lastAction)) {
+					return;
 				}
 
 				System.out.println("This is a new card! " + uid);
@@ -182,42 +189,47 @@ public class Read {
 				keyboard.type("\n");
 
 				i++;
-				oldUID = uid;
-				lastScan = Instant.now();
-				reconnector.setLastAction(lastScan);
+				oldUid = uid;
 				card.disconnect(false);
 
 				System.out.println("ready for next card");
 				System.out.println("Card scan run: " + i);
 			}
-			catch (CardException e) {
-				// Something went wrong when scanning the card
-				if (e.getMessage().equals(FAILED_CARD_TRANSACTION) || e.getMessage().equals(READER_UNAVAILABLE)) {
-					logError(e.getMessage());
-					findAndConnectToTerminal();
-					continue;
-				}
-				// Card is not present while scanning
-				if (e.getMessage().equals(NO_CARD) || e instanceof CardNotPresentException) {
-					logError(e.getMessage());
-					continue;
-				}
-				// Could not reliably connect to the reader (this can mean there is simply no card)
-				if (e.getMessage().equals(NO_CONNECT) || e.getMessage().equals(CARD_READ_FAILURE)) {
-					logError(e.getMessage());
-					continue;
-				}
-				if (e.getMessage().equals(EMPTY_CODE)) {
-					logError(e.getMessage());
-					System.err.println("Empty code was read");
-					continue;
-				}
-				System.err.println("Help something uncatched happened! This should not happen!");
+		}
+		catch (CardException e) {
+			// Something went wrong when scanning the card
+			if (e.getMessage().equals(FAILED_CARD_TRANSACTION) || e.getMessage().equals(READER_UNAVAILABLE)) {
 				logError(e.getMessage());
-				e.printStackTrace();
-				System.out.println(e.getMessage());
 				findAndConnectToTerminal();
+				return;
 			}
+			// Card is not present while scanning
+			if (e.getMessage().equals(NO_CARD) || e instanceof CardNotPresentException) {
+				logError(e.getMessage());
+				return;
+			}
+			// Could not reliably connect to the reader (this can mean there is simply no card)
+			if (e.getMessage().equals(NO_CONNECT) || e.getMessage().equals(CARD_READ_FAILURE)) {
+				logError(e.getMessage());
+				return;
+			}
+			if (e.getMessage().equals(EMPTY_CODE)) {
+				logError(e.getMessage());
+				System.err.println("Empty code was read");
+				return;
+			}
+			System.err.println("Help something uncatched happened! This should not happen!");
+			logError(e.getMessage());
+			e.printStackTrace();
+			System.out.println(e.getMessage());
+			findAndConnectToTerminal();
+		}
+		catch (Throwable e) {
+			System.err.println("Throwable was thrown!");
+			logError(e.getMessage());
+			e.printStackTrace();
+			System.out.println(e.getMessage());
+			findAndConnectToTerminal();
 		}
 	}
 
@@ -229,15 +241,17 @@ public class Read {
 	 * @throws CardException in case of an error
 	 */
 	private String getCardUid(CardChannel channel) throws CardException {
-		ResponseAPDU response = channel.transmit(READ_COMMAND);
-		String uid = new String(Hex.encodeHex(response.getData())).toUpperCase();
-		if (!new String(Hex.encodeHex(response.getBytes())).endsWith("9000")) {
-			throw new CardException(CARD_READ_FAILURE);
+		synchronized (synchronizer) {
+			ResponseAPDU response = channel.transmit(READ_COMMAND);
+			String uid = new String(Hex.encodeHex(response.getData())).toUpperCase();
+			if (!new String(Hex.encodeHex(response.getBytes())).endsWith("9000")) {
+				throw new CardException(CARD_READ_FAILURE);
+			}
+			if (uid.isEmpty()) {
+				throw new CardException(EMPTY_CODE);
+			}
+			return uid;
 		}
-		if (uid.isEmpty()) {
-			throw new CardException(EMPTY_CODE);
-		}
-		return uid;
 	}
 
 	/**
@@ -286,9 +300,6 @@ public class Read {
 	private static class Reconnector implements Runnable {
 
 		private final Read read;
-
-		@Setter
-		private Instant lastAction;
 		private int reconnectTime;
 
 		public Reconnector(Read read, int reconnectTime) {
@@ -300,12 +311,11 @@ public class Read {
 		@Override
 		public void run() {
 			Instant now = Instant.now();
-			if (lastAction == null ||
-					lastAction.plus(reconnectTime, ChronoUnit.SECONDS).isBefore(now)) {
+			if (read.getLastAction() == null ||
+					read.getLastAction().plus(reconnectTime, ChronoUnit.SECONDS).isBefore(now)) {
 				System.out.println("Reconnect due to lack of scan actions");
 				read.findAndConnectToTerminal();
-				read.setLastScan(now);
-				this.setLastAction(now);
+				read.setLastAction(now);
 			}
 		}
 	}
