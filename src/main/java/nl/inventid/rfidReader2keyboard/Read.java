@@ -32,6 +32,7 @@ public class Read implements Runnable {
 	private static final String NO_CONNECT = "connect() failed";
 	private static final String EMPTY_CODE = "Scanned code was empty";
 	private static final String NO_CARD = "sun.security.smartcardio.PCSCException: SCARD_E_NO_SMARTCARD";
+	private static final String REMOVED_CARD = "sun.security.smartcardio.PCSCException: SCARD_W_REMOVED_CARD";
 	private static final String READER_UNAVAILABLE =
 			"sun.security.smartcardio.PCSCException: SCARD_E_READER_UNAVAILABLE";
 	private static final String FAILED_CARD_TRANSACTION =
@@ -58,6 +59,7 @@ public class Read implements Runnable {
 	@Getter
 	@Setter
 	private Instant lastAction;
+	private String usedCardTerminalName;
 
 	public static void main(String[] args) {
 		System.out.println("Starting rfid-reader2keyboard");
@@ -108,10 +110,9 @@ public class Read implements Runnable {
 		TERMINAL_PREFERENCES.add(""); // Fuck, attach with anything (SHOULD BE LAST)
 
 		reconnector = new Reconnector(this, 2); // Reconnect every two seconds
-		executorService.scheduleAtFixedRate(reconnector, 1, 1, TimeUnit.SECONDS);
-
 		keyboard = new Keyboard();
-		findAndConnectToTerminal();
+		lastAction = Instant.now();
+		determineCardTerminalToUse();
 	}
 
 	/**
@@ -119,7 +120,7 @@ public class Read implements Runnable {
 	 *
 	 * @return a valid CardTerminal or halts the system if no match can be found
 	 */
-	public void findAndConnectToTerminal() {
+	private void determineCardTerminalToUse() {
 		try {
 			synchronized (synchronizer) {
 				// show the list of available terminals
@@ -134,9 +135,7 @@ public class Read implements Runnable {
 					System.out.println("Trying to attach to '" + requiredTerminal + "'");
 					for (int i = 0; i < terminals.size(); i++) {
 						if (terminals.get(i).getName().contains(requiredTerminal)) {
-							CardTerminal newTerminal = terminals.get(i);
-							System.out.println("Attached to '" + requiredTerminal + "'");
-							terminal = newTerminal;
+							usedCardTerminalName = terminals.get(i).getName();
 							return;
 						}
 					}
@@ -151,8 +150,39 @@ public class Read implements Runnable {
 		return;
 	}
 
+	/**
+	 * Find and connect to a terminal, based on the preferences in TERMINAL_PREFERENCES
+	 *
+	 * @return a valid CardTerminal or halts the system if no match can be found
+	 */
+	public void findAndConnectToTerminal() {
+		try {
+			synchronized (synchronizer) {
+				// show the list of available terminals
+				TerminalFactory factory = TerminalFactory.getDefault();
+				List<CardTerminal> terminals = factory.terminals().list();
+
+				for (int i = 0; i < terminals.size(); i++) {
+					if (terminals.get(i).getName().equals(usedCardTerminalName)) {
+						System.out.println("Attached to '" + usedCardTerminalName + "'");
+						terminal = terminals.get(i);
+						return;
+					}
+				}
+			}
+		}
+		catch (Throwable e) {
+			// Probably no reader found...
+			System.err.println("Unable to connect to RFID reader");
+			e.printStackTrace();
+		}
+		return;
+	}
+
 	public void startRunning() {
+		findAndConnectToTerminal();
 		executorService.scheduleWithFixedDelay(this, 1000, 100, TimeUnit.MILLISECONDS);
+		executorService.scheduleWithFixedDelay(reconnector, 1, 1, TimeUnit.SECONDS);
 	}
 
 	/**
@@ -173,24 +203,23 @@ public class Read implements Runnable {
 			synchronized (synchronizer) {
 				// Connect to card and read
 				Card card = terminal.connect("T=1");
-				CardChannel channel = card.getBasicChannel();
 
+				CardChannel channel = card.getBasicChannel();
 				// Send data and retrieve output
 				String uid = getCardUid(channel);
-				lastAction = Instant.now();
 
 				if (!isNewCard(uid, oldUid, lastAction)) {
 					return;
 				}
 
 				System.out.println("This is a new card! " + uid);
+				lastAction = Instant.now();
 				// Emulate a keyboard and "type" the uid, followed by a newline
 				keyboard.type(uid);
 				keyboard.type("\n");
 
 				i++;
 				oldUid = uid;
-				card.disconnect(false);
 
 				System.out.println("ready for next card");
 				System.out.println("Card scan run: " + i);
@@ -200,11 +229,12 @@ public class Read implements Runnable {
 			// Something went wrong when scanning the card
 			if (e.getMessage().equals(FAILED_CARD_TRANSACTION) || e.getMessage().equals(READER_UNAVAILABLE)) {
 				logError(e.getMessage());
-				findAndConnectToTerminal();
+//				findAndConnectToTerminal();
 				return;
 			}
 			// Card is not present while scanning
-			if (e.getMessage().equals(NO_CARD) || e instanceof CardNotPresentException) {
+			if (e.getMessage().equals(NO_CARD) || e instanceof CardNotPresentException || e.getMessage()
+					.equals(REMOVED_CARD)) {
 				logError(e.getMessage());
 				return;
 			}
@@ -262,7 +292,7 @@ public class Read implements Runnable {
 	 */
 	private boolean isNewCard(String newUid, String oldUid, Instant lastScan) {
 		return !newUid.equals(oldUid) || lastScan == null ||
-				(lastScan != null && lastScan.plus(1, ChronoUnit.SECONDS).isBefore(Instant.now()));
+				(lastScan != null && lastScan.plus(850, ChronoUnit.MILLIS).isBefore(Instant.now()));
 	}
 
 	/**
