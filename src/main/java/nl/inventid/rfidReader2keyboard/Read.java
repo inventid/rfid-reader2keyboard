@@ -122,9 +122,7 @@ public class Read implements Runnable {
 	 */
 	private void determineCardTerminalToUse() {
 		try {
-			System.out.println("Will enter sychronizer block [determineCardTerminalToUse]");
 			synchronized (synchronizer) {
-				System.out.println("Inside sychronizer block [determineCardTerminalToUse]");
 				// show the list of available terminals
 				TerminalFactory factory = TerminalFactory.getDefault();
 				List<CardTerminal> terminals = factory.terminals().list();
@@ -143,7 +141,6 @@ public class Read implements Runnable {
 					}
 				}
 			}
-			System.out.println("Exited sychronizer block [determineCardTerminalToUse]");
 		}
 		catch (Throwable e) {
 			// Probably no reader found...
@@ -160,9 +157,7 @@ public class Read implements Runnable {
 	 */
 	public void findAndConnectToTerminal() {
 		try {
-			System.out.println("Will enter sychronizer block [findAndConnectToTerminal]");
 			synchronized (synchronizer) {
-				System.out.println("Inside sychronizer block [findAndConnectToTerminal]");
 				// show the list of available terminals
 				TerminalFactory factory = TerminalFactory.getDefault();
 				List<CardTerminal> terminals = factory.terminals().list();
@@ -175,7 +170,6 @@ public class Read implements Runnable {
 					}
 				}
 			}
-			System.out.println("Exited sychronizer block [findAndConnectToTerminal]");
 		}
 		catch (Throwable e) {
 			// Probably no reader found...
@@ -206,9 +200,7 @@ public class Read implements Runnable {
 			return;
 		}
 		try {
-			System.out.println("Will enter sychronizer block [run]");
 			synchronized (synchronizer) {
-				System.out.println("Inside sychronizer block [run]");
 				// Connect to card and read
 				Card card = terminal.connect("T=1");
 
@@ -232,13 +224,12 @@ public class Read implements Runnable {
 				System.out.println("ready for next card");
 				System.out.println("Card scan run: " + i);
 			}
-			System.out.println("Exited sychronizer block [run]");
 		}
 		catch (CardException e) {
 			// Something went wrong when scanning the card
 			if (e.getMessage().equals(FAILED_CARD_TRANSACTION) || e.getMessage().equals(READER_UNAVAILABLE)) {
 				logError(e.getMessage());
-//				findAndConnectToTerminal();
+				//				findAndConnectToTerminal();
 				return;
 			}
 			// Card is not present while scanning
@@ -280,21 +271,17 @@ public class Read implements Runnable {
 	 * @throws CardException in case of an error
 	 */
 	private String getCardUid(CardChannel channel) throws CardException {
-		System.out.println("Will enter sychronizer block [getCardUid]");
-		String uid;
 		synchronized (synchronizer) {
-			System.out.println("Inside sychronizer block [getCardUid]");
 			ResponseAPDU response = channel.transmit(READ_COMMAND);
-			uid = new String(Hex.encodeHex(response.getData())).toUpperCase();
+			String uid = new String(Hex.encodeHex(response.getData())).toUpperCase();
 			if (!new String(Hex.encodeHex(response.getBytes())).endsWith("9000")) {
 				throw new CardException(CARD_READ_FAILURE);
 			}
 			if (uid.isEmpty()) {
 				throw new CardException(EMPTY_CODE);
 			}
+			return uid;
 		}
-		System.out.println("Exited sychronizer block [getCardUid]");
-		return uid;
 	}
 
 	/**
