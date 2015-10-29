@@ -15,8 +15,12 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.FutureTask;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import com.google.common.collect.Lists;
 import lombok.Getter;
@@ -72,7 +76,7 @@ public class Read implements Runnable {
 				"The most likely reason you see this is in order to resolve any issue you ay have found. Please follow"
 						+ " the instructions of inventid support and send these lines to the given email address");
 
-		executorService = new ScheduledThreadPoolExecutor(3);
+		executorService = new ScheduledThreadPoolExecutor(5);
 		errorLogger = new ErrorLogger();
 		detectorLoop = new TerminalDetector();
 		executorService.scheduleAtFixedRate(errorLogger, 10, 30, TimeUnit.SECONDS);
@@ -206,7 +210,19 @@ public class Read implements Runnable {
 
 				CardChannel channel = card.getBasicChannel();
 				// Send data and retrieve output
-				String uid = getCardUid(channel);
+				Callable task = new CardUuidReader(channel);
+				FutureTask<String> future = new FutureTask<>(task);
+				executorService.execute(future);
+				String uid;
+				try {
+					uid = future.get(100, TimeUnit.MILLISECONDS);
+				} catch (TimeoutException e) {
+					future.cancel(true);
+					System.err.println("Did not get an card uid in time, cancelled");
+					return;
+				} catch (ExecutionException e) {
+					throw e.getCause();
+				}
 
 				if (!isNewCard(uid, oldUid, lastAction)) {
 					return;
@@ -225,7 +241,10 @@ public class Read implements Runnable {
 				System.out.println("Card scan run: " + i);
 			}
 		}
-		catch (CardException e) {
+		catch (Exception e) {
+			if ( e instanceof CardException) {
+				e = (CardException) e;
+			}
 			// Something went wrong when scanning the card
 			if (e.getMessage().equals(FAILED_CARD_TRANSACTION) || e.getMessage().equals(READER_UNAVAILABLE)) {
 				logError(e.getMessage());
@@ -263,26 +282,6 @@ public class Read implements Runnable {
 		}
 	}
 
-	/**
-	 * Get the uid of a card
-	 *
-	 * @param channel the channel to transmit over
-	 * @return a String with the value of the uid (not empty)
-	 * @throws CardException in case of an error
-	 */
-	private String getCardUid(CardChannel channel) throws CardException {
-		synchronized (synchronizer) {
-			ResponseAPDU response = channel.transmit(READ_COMMAND);
-			String uid = new String(Hex.encodeHex(response.getData())).toUpperCase();
-			if (!new String(Hex.encodeHex(response.getBytes())).endsWith("9000")) {
-				throw new CardException(CARD_READ_FAILURE);
-			}
-			if (uid.isEmpty()) {
-				throw new CardException(EMPTY_CODE);
-			}
-			return uid;
-		}
-	}
 
 	/**
 	 * @param newUid   the newly scanned UID
@@ -347,6 +346,33 @@ public class Read implements Runnable {
 				read.findAndConnectToTerminal();
 				read.setLastAction(now);
 			}
+		}
+	}
+
+	private static class CardUuidReader implements Callable {
+
+		private final CardChannel channel;
+
+		public CardUuidReader(CardChannel channel) {
+			this.channel = channel;
+		}
+
+		/**
+		 * Get the uid of a card
+		 *
+		 * @return a String with the value of the uid (not empty)
+		 * @throws CardException in case of an error
+		 */
+		public String call() throws Exception {
+			ResponseAPDU response = channel.transmit(READ_COMMAND);
+			String uid = new String(Hex.encodeHex(response.getData())).toUpperCase();
+			if (!new String(Hex.encodeHex(response.getBytes())).endsWith("9000")) {
+				throw new CardException(CARD_READ_FAILURE);
+			}
+			if (uid.isEmpty()) {
+				throw new CardException(EMPTY_CODE);
+			}
+			return uid;
 		}
 	}
 }
