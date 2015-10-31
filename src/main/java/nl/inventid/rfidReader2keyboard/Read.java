@@ -9,6 +9,9 @@ import javax.smartcardio.CommandAPDU;
 import javax.smartcardio.ResponseAPDU;
 import javax.smartcardio.TerminalFactory;
 
+import java.security.NoSuchAlgorithmException;
+import java.security.NoSuchProviderException;
+import java.security.Security;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -17,12 +20,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 import com.google.common.collect.Lists;
+import com.google.common.primitives.Bytes;
+import jnasmartcardio.Smartcardio;
 import lombok.Getter;
 import lombok.Setter;
 import org.apache.commons.codec.binary.Hex;
@@ -33,29 +40,40 @@ import org.apache.commons.codec.binary.Hex;
  */
 public class Read implements Runnable {
 
+	// Annoytingly catching java errors which are inconsistent across platforms
 	private static final String NO_CONNECT = "connect() failed";
 	private static final String EMPTY_CODE = "Scanned code was empty";
 	private static final String NO_CARD = "sun.security.smartcardio.PCSCException: SCARD_E_NO_SMARTCARD";
 	private static final String REMOVED_CARD = "sun.security.smartcardio.PCSCException: SCARD_W_REMOVED_CARD";
 	private static final String READER_UNAVAILABLE =
 			"sun.security.smartcardio.PCSCException: SCARD_E_READER_UNAVAILABLE";
+	private static final String CARD_READ_FAILURE = "Card read failure";
 	private static final String FAILED_CARD_TRANSACTION =
 			"sun.security.smartcardio.PCSCException: SCARD_E_NOT_TRANSACTED";
+
+	// APDU commands
 	private static final CommandAPDU READ_COMMAND = new CommandAPDU(new byte[] { (byte) 0xFF, (byte) 0xCA, (byte) 0x00,
 			(byte) 0x00, (byte) 0x00 });
+	private static final CommandAPDU DISABLE_BUZZER = new CommandAPDU(new byte[] { (byte) 0xFF, (byte) 0x00, (byte) 0x52,
+			(byte) 0x00, (byte) 0x00 });
+	private static final byte[] ONE_BUZZ_APDU = new byte[] { (byte) 0xFF, (byte) 0x00, (byte) 0x40,
+			(byte) 0x40, (byte) 0x04};
 
+	private static final byte[] ONE_BUZZ_DATA = new byte[] {(byte)0x00,(byte) 0x01, (byte)0x02, (byte)0x02 };
+
+	// Some actual class stuff
 	private static final List<String> TERMINAL_PREFERENCES = new ArrayList<>();
 	private static final Map<String, Integer> errorMap = new HashMap<>();
-	private static final String CARD_READ_FAILURE = "Card read failure";
-
-	private static TerminalDetector detectorLoop;
-	private static ErrorLogger errorLogger;
 	private static ScheduledThreadPoolExecutor executorService;
-
-	private final Reconnector reconnector;
 	private final Keyboard keyboard;
 	private final Object[] synchronizer = new Object[0];
 
+	// Static threads
+	private static TerminalDetector detectorLoop;
+	private static ErrorLogger errorLogger;
+	private final Reconnector reconnector;
+
+	// Actual instance stuff
 	private String oldUid;
 	private CardTerminal terminal;
 	private int i;
@@ -65,8 +83,12 @@ public class Read implements Runnable {
 	private Instant lastAction;
 	private String usedCardTerminalName;
 
-	public static void main(String[] args) {
+	public static void main(String[] args) throws NoSuchProviderException, NoSuchAlgorithmException {
 		System.out.println("Starting rfid-reader2keyboard");
+
+		Security.insertProviderAt(new Smartcardio(), 1);
+		TerminalFactory.getInstance("PC/SC", null);
+
 		System.out.println("The following terminals were detected:");
 		System.out.println(Read.listTerminals());
 
@@ -205,28 +227,32 @@ public class Read implements Runnable {
 		}
 		try {
 			synchronized (synchronizer) {
-				// Connect to card and read
-				Card card = terminal.connect("T=1");
-
-				CardChannel channel = card.getBasicChannel();
-				// Send data and retrieve output
-				Callable task = new CardUuidReader(channel);
+				ExecutorService uglyExecutorHack = Executors.newSingleThreadExecutor();
+				Callable task = new CardUuidReader(terminal);
 				FutureTask<String> future = new FutureTask<>(task);
-				executorService.execute(future);
+				uglyExecutorHack.execute(future);
 				String uid;
 				try {
 					uid = future.get(100, TimeUnit.MILLISECONDS);
-				} catch (TimeoutException e) {
+				}
+				catch (TimeoutException e) {
 					future.cancel(true);
 					System.err.println("Did not get an card uid in time, cancelled");
 					return;
-				} catch (ExecutionException e) {
+				}
+				catch (ExecutionException e) {
 					throw e.getCause();
+				} finally {
+					List<Runnable> remainingRunnables = uglyExecutorHack.shutdownNow();
+					System.out.println("The following items remained in the executorpool: " + remainingRunnables);
 				}
 
 				if (!isNewCard(uid, oldUid, lastAction)) {
 					return;
 				}
+
+				// Buzz!
+				new Thread(new SingleBuzz(terminal)).start();
 
 				System.out.println("This is a new card! " + uid);
 				lastAction = Instant.now();
@@ -242,9 +268,10 @@ public class Read implements Runnable {
 			}
 		}
 		catch (Exception e) {
-			if ( e instanceof CardException) {
+			if (e instanceof CardException) {
 				e = (CardException) e;
 			}
+			System.out.println(String.format("%s: %s - %s", e.getClass(), e.getCause(), e.getMessage()));
 			// Something went wrong when scanning the card
 			if (e.getMessage().equals(FAILED_CARD_TRANSACTION) || e.getMessage().equals(READER_UNAVAILABLE)) {
 				logError(e.getMessage());
@@ -291,7 +318,7 @@ public class Read implements Runnable {
 	 */
 	private boolean isNewCard(String newUid, String oldUid, Instant lastScan) {
 		return !newUid.equals(oldUid) || lastScan == null ||
-				(lastScan != null && lastScan.plus(850, ChronoUnit.MILLIS).isBefore(Instant.now()));
+				(lastScan != null && lastScan.plus(1250, ChronoUnit.MILLIS).isBefore(Instant.now()));
 	}
 
 	/**
@@ -310,6 +337,7 @@ public class Read implements Runnable {
 	private static class ErrorLogger implements Runnable {
 		public void run() {
 			System.out.println("Error map: " + errorMap.entrySet());
+			System.out.println("Executorpool runnables: " + executorService.getQueue());
 		}
 	}
 
@@ -351,10 +379,10 @@ public class Read implements Runnable {
 
 	private static class CardUuidReader implements Callable {
 
-		private final CardChannel channel;
+		private final CardTerminal terminal;
 
-		public CardUuidReader(CardChannel channel) {
-			this.channel = channel;
+		public CardUuidReader(CardTerminal terminal) {
+			this.terminal = terminal;
 		}
 
 		/**
@@ -364,15 +392,60 @@ public class Read implements Runnable {
 		 * @throws CardException in case of an error
 		 */
 		public String call() throws Exception {
-			ResponseAPDU response = channel.transmit(READ_COMMAND);
-			String uid = new String(Hex.encodeHex(response.getData())).toUpperCase();
-			if (!new String(Hex.encodeHex(response.getBytes())).endsWith("9000")) {
-				throw new CardException(CARD_READ_FAILURE);
+			System.out.println("Running the Callable");
+			String uid;
+			try {
+				// Connect to card and read
+				Card card = terminal.connect("T=1");
+
+				// Get the basic communication channel
+				CardChannel channel = card.getBasicChannel();
+
+				// Disable the buzzer
+				channel.transmit(DISABLE_BUZZER);
+
+				// Send data and retrieve output
+				ResponseAPDU response = channel.transmit(READ_COMMAND);
+				uid = new String(Hex.encodeHex(response.getData())).toUpperCase();
+				if (!new String(Hex.encodeHex(response.getBytes())).endsWith("9000")) {
+					card.disconnect(true);
+					throw new CardException(CARD_READ_FAILURE);
+				}
+				if (uid.isEmpty()) {
+					card.disconnect(true);
+					throw new CardException(EMPTY_CODE);
+				}
+				card.disconnect(true);
 			}
-			if (uid.isEmpty()) {
-				throw new CardException(EMPTY_CODE);
+			catch (Smartcardio.JnaPCSCException e) {
+				throw new CardException(NO_CARD);
 			}
 			return uid;
+		}
+	}
+
+	private class SingleBuzz implements Runnable {
+
+		private final CardTerminal terminal;
+
+		public SingleBuzz(CardTerminal terminal) {
+			this.terminal = terminal;
+		}
+
+		public void run() {
+			try {
+				// Connect to card and read
+				Card card = terminal.connect("T=1");
+
+				// Get the basic communication channel
+				CardChannel channel = card.getBasicChannel();
+
+				// Send a single buzzer event
+				CommandAPDU oneBuzz = new CommandAPDU(Bytes.concat(ONE_BUZZ_APDU, ONE_BUZZ_DATA));
+				channel.transmit(oneBuzz);
+			} catch (Exception e) {
+				System.err.println("Could not buzz");
+			}
 		}
 	}
 }
