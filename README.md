@@ -4,18 +4,30 @@
 
 This is a very simple maven project which reads the code (_uid_) of your RFID chip, and types it as if it were typed on a keyboard.
 
-Although one might think this should be simple, due to the availability of the `javax.smardcardio`, nothing could be further from the truth.
+Although one might think this should be simple, due to the availability of the `javax.smartcardio`, nothing could be further from the truth.
 There are a number of issues with this part of the `javax` library:
 
 1. On some platform, methods as `waitForCardAbsent` and `waitForCardPresent` may block indefinitely, albeit setting a timeout value.
 1. On some platform, methods as `waitForCardAbsent` and `waitForCardPresent` may continue even if the condition is simply not met.
 1. Scanners can become disconnected from your software, causing random failures after a period of time.
-1. The exceptions thrown by the JVM may differ per platform. On OSX a CardException may be raised, whereas Windows can trigger a CardNotPresentException under the same circumstances. 
+1. The exceptions thrown by the JVM may differ per platform. On OSX a CardException may be raised, whereas Windows can trigger a CardNotPresentException under the same circumstances.
+1. When sending a command to a card and waiting for a response, if the card is removed before sending a response your thread becomes blocked indefinitely.
 
 In general, this makes development quite hard and testing close to impossible.
 Timeouts may be triggered after several hours of correct functioning, or simply after a minute of idle time.
 
 This small program attempts to mediate these issues, such that scanning of cards is viable cross platform within the JVM.
+
+## Implementation
+
+The software uses the Jna SmartcardIO libary wrapper.
+This library is more resilient than the default `javax.smartcardio` library.
+
+Apart from that, the service extensively uses bulkheads to isolate from possible failures.
+Each card scanning action is performed with a Future in a separate ExecutorService.
+This way, we can cancel actions if the card did not respond in time (usually due to card removal).
+
+To prevent scanner disconnects, the software will keep track of the last scan action time, and reconnect if that was too long ago.
 
 ## How to run
 
