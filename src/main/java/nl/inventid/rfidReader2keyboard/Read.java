@@ -40,7 +40,7 @@ import org.apache.commons.codec.binary.Hex;
  */
 public class Read implements Runnable {
 
-	// Annoytingly catching java errors which are inconsistent across platforms
+	// Annoyingly catching java errors which are inconsistent across platforms
 	private static final String NO_CONNECT = "connect() failed";
 	private static final String EMPTY_CODE = "Scanned code was empty";
 	private static final String NO_CARD = "sun.security.smartcardio.PCSCException: SCARD_E_NO_SMARTCARD";
@@ -227,11 +227,15 @@ public class Read implements Runnable {
 		}
 		try {
 			synchronized (synchronizer) {
+				// Bulkhead feature, ensure we do not fire anything there on the main thread or executorservice so prevent
+				// those of becoming too busy
 				ExecutorService uglyExecutorHack = Executors.newSingleThreadExecutor();
 				Callable task = new CardUuidReader(terminal);
 				FutureTask<String> future = new FutureTask<>(task);
 				uglyExecutorHack.execute(future);
 				String uid;
+
+				// We'll give the card 100ms to respond, or we cancel the request.
 				try {
 					uid = future.get(100, TimeUnit.MILLISECONDS);
 				}
@@ -241,24 +245,25 @@ public class Read implements Runnable {
 					return;
 				}
 				catch (ExecutionException e) {
+					System.err.println("Something went wrong while executing the Callable");
 					throw e.getCause();
 				} finally {
 					List<Runnable> remainingRunnables = uglyExecutorHack.shutdownNow();
-					System.out.println("The following items remained in the executorpool: " + remainingRunnables);
+					System.out.println("The following items remained in the executorpool: " + remainingRunnables); // TODO: remove once confident
 				}
 
+				// We'll check if this is simply a re-read, if it is, we are not going to type this again
 				if (!isNewCard(uid, oldUid, lastAction)) {
 					return;
 				}
 
-				// Buzz!
+				// Buzz! Separate thread to allow it to fail if the card is removed by now!
 				new Thread(new SingleBuzz(terminal)).start();
 
 				System.out.println("This is a new card! " + uid);
 				lastAction = Instant.now();
 				// Emulate a keyboard and "type" the uid, followed by a newline
-				keyboard.type(uid);
-				keyboard.type("\n");
+				keyboard.type(uid + "\n");
 
 				i++;
 				oldUid = uid;
@@ -268,14 +273,10 @@ public class Read implements Runnable {
 			}
 		}
 		catch (Exception e) {
-			if (e instanceof CardException) {
-				e = (CardException) e;
-			}
-			System.out.println(String.format("%s: %s - %s", e.getClass(), e.getCause(), e.getMessage()));
+			System.out.println(String.format("%s: %s - %s", e.getClass(), e.getCause(), e.getMessage())); // TODO: Remove after more confidence
 			// Something went wrong when scanning the card
 			if (e.getMessage().equals(FAILED_CARD_TRANSACTION) || e.getMessage().equals(READER_UNAVAILABLE)) {
 				logError(e.getMessage());
-				//				findAndConnectToTerminal();
 				return;
 			}
 			// Card is not present while scanning
@@ -377,6 +378,12 @@ public class Read implements Runnable {
 		}
 	}
 
+	/**
+	 * Read the Card UID.
+	 *
+	 * This is done in a Callable so we can extract it as a future and get the value (or cancel).
+	 * And due to the bulkhead protection strategy, we certainly do not want to do this on the main thread.
+	 */
 	private static class CardUuidReader implements Callable {
 
 		private final CardTerminal terminal;
@@ -392,7 +399,7 @@ public class Read implements Runnable {
 		 * @throws CardException in case of an error
 		 */
 		public String call() throws Exception {
-			System.out.println("Running the Callable");
+			System.out.println("Running the Callable"); // TODO: Remove once confident
 			String uid;
 			try {
 				// Connect to card and read
@@ -408,10 +415,12 @@ public class Read implements Runnable {
 				ResponseAPDU response = channel.transmit(READ_COMMAND);
 				uid = new String(Hex.encodeHex(response.getData())).toUpperCase();
 				if (!new String(Hex.encodeHex(response.getBytes())).endsWith("9000")) {
+					// Unsuccessful response
 					card.disconnect(true);
 					throw new CardException(CARD_READ_FAILURE);
 				}
 				if (uid.isEmpty()) {
+					// Empty response (should not happen, but heh)
 					card.disconnect(true);
 					throw new CardException(EMPTY_CODE);
 				}
@@ -424,6 +433,10 @@ public class Read implements Runnable {
 		}
 	}
 
+	/**
+	 * This simple Runnable class takes a terminal and fires a keep that way.
+	 * In case the card disconnected, it will fail silently
+	 */
 	private class SingleBuzz implements Runnable {
 
 		private final CardTerminal terminal;
@@ -444,6 +457,7 @@ public class Read implements Runnable {
 				CommandAPDU oneBuzz = new CommandAPDU(Bytes.concat(ONE_BUZZ_APDU, ONE_BUZZ_DATA));
 				channel.transmit(oneBuzz);
 			} catch (Exception e) {
+				// Might well be triggered if the card is removed before this method is called. Not buzzing is not a very big deal though
 				System.err.println("Could not buzz");
 			}
 		}
