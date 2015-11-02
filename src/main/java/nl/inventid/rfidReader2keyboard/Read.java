@@ -238,9 +238,9 @@ public class Read implements Runnable {
 				uglyExecutorHack.execute(future);
 				String uid;
 
-				// We'll give the card 100ms to respond, or we cancel the request.
+				// We'll give the card 150ms to respond, or we cancel the request.
 				try {
-					uid = future.get(100, TimeUnit.MILLISECONDS);
+					uid = future.get(150, TimeUnit.MILLISECONDS);
 				}
 				catch (TimeoutException e) {
 					future.cancel(true);
