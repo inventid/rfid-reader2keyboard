@@ -36,6 +36,14 @@ One of these is lean, the other includes all dependencies.
 The latter one should be used by clients.
 Alternatively, you can run `mvn clean install exec:java` to execute things directly from the CLI.
 
+## Using USB extension cables
+
+Generally, just don't.
+These cables may have all kind of issues.
+Especially USB readers are really vulnerable for this, since they need sufficient power to create a field where the RFID tag can operate in.
+In you want to use an extension cable, please use a powered USB hub.
+These ensure that the voltage on high enough for the reader to function.
+
 ## Releases
 
 Any successful merge to `master` is automatically available on the [Github release page](https://github.com/inventid/rfid-reader2keyboard/releases).
