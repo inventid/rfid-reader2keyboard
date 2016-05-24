@@ -11,14 +11,14 @@ env:
 notifications:
   email: false
 
-before_script:
-  - apt-get update && apt-get install jq maven curl -y
-  - if [[ $SHIPPABLE_JDK_VERSION == "oraclejdk8" ]] ; then export JAVA_HOME="/usr/lib/jvm/java-8-oracle"; export PATH="$PATH:/usr/lib/jvm/java-8-oracle/bin"; export java_path="/usr/lib/jvm/java-8-oracle/jre/bin/java"; fi
-  - update-alternatives --set java $java_path
-  - java -version
 
-script:
-   - mvn clean test install package
+build:
+  ci:
+    - apt-get update && apt-get install jq maven curl -y
+    - if [[ $SHIPPABLE_JDK_VERSION == "oraclejdk8" ]] ; then export JAVA_HOME="/usr/lib/jvm/java-8-oracle"; export PATH="$PATH:/usr/lib/jvm/java-8-oracle/bin"; export java_path="/usr/lib/jvm/java-8-oracle/jre/bin/java"; fi
+    - update-alternatives --set java $java_path
+    - java -version
+    - mvn clean test install package
+  on_success:
+    - if [ "$BRANCH" == "master" -a "$PULL_REQUEST" == "false" ] ; then bash ./create-release.sh; fi
 
-after_success:
-  - if [ "$BRANCH" == "master" -a "$PULL_REQUEST" == "false" ] ; then bash ./create-release.sh; fi
