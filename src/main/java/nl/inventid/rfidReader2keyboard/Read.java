@@ -40,42 +40,18 @@ import org.apache.commons.codec.binary.Hex;
  */
 public class Read implements Runnable {
 
-	// Annoyingly catching java errors which are inconsistent across platforms
-	private static final String NO_CONNECT = "connect() failed";
-	private static final String EMPTY_CODE = "Scanned code was empty";
-	private static final String NO_CARD = "sun.security.smartcardio.PCSCException: SCARD_E_NO_SMARTCARD";
-	private static final String REMOVED_CARD = "sun.security.smartcardio.PCSCException: SCARD_W_REMOVED_CARD";
-	private static final String READER_UNAVAILABLE =
-			"sun.security.smartcardio.PCSCException: SCARD_E_READER_UNAVAILABLE";
-	private static final String CARD_READ_FAILURE = "Card read failure";
-	private static final String FAILED_CARD_TRANSACTION =
-			"sun.security.smartcardio.PCSCException: SCARD_E_NOT_TRANSACTED";
-
-	// APDU commands
-	private static final CommandAPDU READ_COMMAND = new CommandAPDU(new byte[] { (byte) 0xFF, (byte) 0xCA, (byte) 0x00,
-			(byte) 0x00, (byte) 0x00 });
-	private static final CommandAPDU DISABLE_BUZZER =
-			new CommandAPDU(new byte[] { (byte) 0xFF, (byte) 0x00, (byte) 0x52,
-					(byte) 0x00, (byte) 0x00 });
-	private static final byte[] ONE_BUZZ_APDU = new byte[] { (byte) 0xFF, (byte) 0x00, (byte) 0x40,
-			(byte) 0x40, (byte) 0x04 };
-	// This is the format to set the initial leds to off, set the beep timing to 100ms, beep just once and return to
-	// default. http://www.acs.com.hk/download-manual/419/API-ACR122U-2.03.pdf
-	private static final byte[] ONE_BUZZ_DATA = new byte[] { (byte) 0x00, (byte) 0x01, (byte) 0x02, (byte) 0x02 };
-
 	// Some actual class stuff
 	private static final List<String> TERMINAL_PREFERENCES = new ArrayList<>();
 	private static final Map<String, Integer> errorMap = new HashMap<>();
-	private static ScheduledThreadPoolExecutor executorService;
-	private final Keyboard keyboard;
-	private final Object[] synchronizer = new Object[0];
 
-	// Static threads
-	private static TerminalDetector detectorLoop;
-	private static ErrorLogger errorLogger;
+	private static ScheduledThreadPoolExecutor executorService = new ScheduledThreadPoolExecutor(5);
+	private static TerminalDetector detectorLoop = new TerminalDetector();
+	private static ErrorLogger errorLogger = new ErrorLogger();
+
+	private final Object[] synchronizer = new Object[0];
+	private final Keyboard keyboard;
 	private final Reconnector reconnector;
 
-	// Actual instance stuff
 	private String oldUid;
 	private CardTerminal terminal;
 	private int i;
@@ -100,13 +76,10 @@ public class Read implements Runnable {
 				"The most likely reason you see this is in order to resolve any issue you ay have found. Please follow"
 						+ " the instructions of inventid support and send these lines to the given email address");
 
-		executorService = new ScheduledThreadPoolExecutor(5);
-		errorLogger = new ErrorLogger();
-		detectorLoop = new TerminalDetector();
 		executorService.scheduleAtFixedRate(errorLogger, 10, 30, TimeUnit.SECONDS);
 		executorService.scheduleAtFixedRate(detectorLoop, 10, 15, TimeUnit.SECONDS);
 
-		Read reader = new Read(executorService);
+		Read reader = new Read();
 		reader.startRunning();
 
 		Runtime.getRuntime().addShutdownHook(new Thread() {
@@ -132,7 +105,7 @@ public class Read implements Runnable {
 		}
 	}
 
-	public Read(ScheduledThreadPoolExecutor executorService) {
+	public Read() {
 		TERMINAL_PREFERENCES.add("ACS ACR122U PICC Interface"); // Best match
 		TERMINAL_PREFERENCES.add("ACR122"); // That'll do (Windows does not include the U)
 		TERMINAL_PREFERENCES.add(""); // Fuck, attach with anything (SHOULD BE LAST)
@@ -230,8 +203,7 @@ public class Read implements Runnable {
 		try {
 			synchronized (synchronizer) {
 				// Bulkhead feature, ensure we do not fire anything there on the main thread or executorservice so
-				// prevent
-				// those of becoming too busy
+				// prevent those of becoming too busy
 				ExecutorService uglyExecutorHack = Executors.newSingleThreadExecutor();
 				Callable task = new CardUuidReader(terminal);
 				FutureTask<String> future = new FutureTask<>(task);
@@ -277,39 +249,41 @@ public class Read implements Runnable {
 		}
 		catch (Exception e) {
 			// Something went wrong when scanning the card
-			if (e.getMessage().equals(FAILED_CARD_TRANSACTION) || e.getMessage().equals(READER_UNAVAILABLE)) {
+			if (e.getMessage().equals(Errors.FAILED_CARD_TRANSACTION) || e.getMessage()
+					.equals(Errors.READER_UNAVAILABLE)) {
 				logError(e.getMessage());
 				return;
 			}
 			// Card is not present while scanning
-			if (e.getMessage().equals(NO_CARD) || e instanceof CardNotPresentException || e.getMessage()
-					.equals(REMOVED_CARD)) {
+			if (e.getMessage().equals(Errors.NO_CARD) || e instanceof CardNotPresentException || e.getMessage()
+					.equals(Errors.REMOVED_CARD)) {
 				logError(e.getMessage());
 				return;
 			}
 			// Could not reliably connect to the reader (this can mean there is simply no card)
-			if (e.getMessage().equals(NO_CONNECT) || e.getMessage().equals(CARD_READ_FAILURE)) {
+			if (e.getMessage().equals(Errors.NO_CONNECT) || e.getMessage().equals(Errors.CARD_READ_FAILURE)) {
 				logError(e.getMessage());
 				return;
 			}
-			if (e.getMessage().equals(EMPTY_CODE)) {
+			if (e.getMessage().equals(Errors.EMPTY_CODE)) {
 				logError(e.getMessage());
 				System.err.println("Empty code was read");
 				return;
 			}
 			System.err.println("Help something uncatched happened! This should not happen!");
-			logError(e.getMessage());
-			e.printStackTrace();
-			System.out.println(e.getMessage());
-			findAndConnectToTerminal();
+			attemptRecovery(e);
 		}
 		catch (Throwable e) {
 			System.err.println("Throwable was thrown!");
-			logError(e.getMessage());
-			e.printStackTrace();
-			System.out.println(e.getMessage());
-			findAndConnectToTerminal();
+			attemptRecovery(e);
 		}
+	}
+
+	private void attemptRecovery(Throwable e) {
+		logError(e.getMessage());
+		e.printStackTrace();
+		System.out.println(e.getMessage());
+		findAndConnectToTerminal();
 	}
 
 
@@ -362,9 +336,9 @@ public class Read implements Runnable {
 		private final Read read;
 		private int reconnectTime;
 
-		public Reconnector(Read read, int reconnectTime) {
+		public Reconnector(Read read, int reconnectTimeInSeconds) {
 			this.read = read;
-			this.reconnectTime = reconnectTime;
+			this.reconnectTime = reconnectTimeInSeconds;
 			System.out.println("Reconnector started");
 		}
 
@@ -409,25 +383,25 @@ public class Read implements Runnable {
 				CardChannel channel = card.getBasicChannel();
 
 				// Disable the buzzer
-				channel.transmit(DISABLE_BUZZER);
+				channel.transmit(Commands.DISABLE_BUZZER);
 
 				// Send data and retrieve output
-				ResponseAPDU response = channel.transmit(READ_COMMAND);
+				ResponseAPDU response = channel.transmit(Commands.READ);
 				uid = new String(Hex.encodeHex(response.getData())).toUpperCase();
 				if (!new String(Hex.encodeHex(response.getBytes())).endsWith("9000")) {
 					// Unsuccessful response
 					card.disconnect(true);
-					throw new CardException(CARD_READ_FAILURE);
+					throw new CardException(Errors.CARD_READ_FAILURE);
 				}
 				if (uid.isEmpty()) {
 					// Empty response (should not happen, but heh)
 					card.disconnect(true);
-					throw new CardException(EMPTY_CODE);
+					throw new CardException(Errors.EMPTY_CODE);
 				}
 				card.disconnect(true);
 			}
 			catch (Smartcardio.JnaPCSCException e) {
-				throw new CardException(NO_CARD);
+				throw new CardException(Errors.NO_CARD);
 			}
 			return uid;
 		}
@@ -454,7 +428,7 @@ public class Read implements Runnable {
 				CardChannel channel = card.getBasicChannel();
 
 				// Send a single buzzer event
-				CommandAPDU oneBuzz = new CommandAPDU(Bytes.concat(ONE_BUZZ_APDU, ONE_BUZZ_DATA));
+				CommandAPDU oneBuzz = new CommandAPDU(Bytes.concat(Commands.ONE_BUZZ_APDU, Commands.ONE_BUZZ_DATA));
 				channel.transmit(oneBuzz);
 			}
 			catch (Exception e) {
