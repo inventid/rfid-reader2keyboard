@@ -10,7 +10,7 @@ There are a number of issues with this part of the `javax` library:
 1. On some platform, methods as `waitForCardAbsent` and `waitForCardPresent` may block indefinitely, albeit setting a timeout value.
 1. On some platform, methods as `waitForCardAbsent` and `waitForCardPresent` may continue even if the condition is simply not met.
 1. Scanners can become disconnected from your software, causing random failures after a period of time.
-1. The exceptions thrown by the JVM may differ per platform. On OSX a CardException may be raised, whereas Windows can trigger a CardNotPresentException under the same circumstances.
+1. The exceptions thrown by the JVM may differ per platform. On OSX a `CardException` may be raised, whereas Windows can trigger a `CardNotPresentException` under the same circumstances.
 1. When sending a command to a card and waiting for a response, if the card is removed before sending a response your thread becomes blocked indefinitely.
 
 In general, this makes development quite hard and testing close to impossible.
@@ -40,9 +40,9 @@ Alternatively, you can run `mvn clean install exec:java` to execute things direc
 
 Generally, just don't.
 These cables may have all kind of issues.
-Especially USB readers are really vulnerable for this, since they need sufficient power to create a field where the RFID tag can operate in.
-In you want to use an extension cable, please use a powered USB hub.
-These ensure that the voltage on high enough for the reader to function.
+Especially USB RFID readers are really vulnerable for this, since they need sufficient power to create a field where the RFID tag can operate in.
+In you want to use an extension cable, use a powered USB hub.
+These ensure that the voltage is high enough for the reader to function.
 
 ## Releases
 
