@@ -252,9 +252,7 @@ public class Read implements Runnable {
 					throw e.getCause();
 				}
 				finally {
-					List<Runnable> remainingRunnables = uglyExecutorHack.shutdownNow();
-					System.out.println("The following items remained in the executorpool: " + remainingRunnables); //
-					// TODO: remove once confident
+					uglyExecutorHack.shutdownNow();
 				}
 
 				// We'll check if this is simply a re-read, if it is, we are not going to type this again
@@ -278,8 +276,6 @@ public class Read implements Runnable {
 			}
 		}
 		catch (Exception e) {
-			System.out.println(String.format("%s: %s - %s", e.getClass(), e.getCause(),
-					e.getMessage())); // TODO: Remove after more confidence
 			// Something went wrong when scanning the card
 			if (e.getMessage().equals(FAILED_CARD_TRANSACTION) || e.getMessage().equals(READER_UNAVAILABLE)) {
 				logError(e.getMessage());
@@ -404,7 +400,6 @@ public class Read implements Runnable {
 		 * @throws CardException in case of an error
 		 */
 		public String call() throws Exception {
-			System.out.println("Running the Callable"); // TODO: Remove once confident
 			String uid;
 			try {
 				// Connect to card and read
