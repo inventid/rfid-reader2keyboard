@@ -3,14 +3,6 @@ package nl.inventid.rfidReader2keyboard;
 import javax.swing.*;
 
 import java.awt.*;
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
-import java.util.Observable;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-
-import nl.inventid.rfidReader2keyboard.reader.Read;
 
 /**
  * This class starts and handles the GUI

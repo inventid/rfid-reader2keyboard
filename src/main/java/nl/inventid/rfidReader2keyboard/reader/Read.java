@@ -10,7 +10,6 @@ import javax.smartcardio.ResponseAPDU;
 import javax.smartcardio.TerminalFactory;
 
 import java.security.NoSuchAlgorithmException;
-import java.security.NoSuchProviderException;
 import java.security.Security;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -43,13 +42,13 @@ public class Read implements Runnable {
 
 	private final List<String> TERMINAL_PREFERENCES = new ArrayList<>();
 	private final Map<String, Integer> errorMap = new HashMap<>();
-
-	private final ScheduledThreadPoolExecutor executorService  = new ScheduledThreadPoolExecutor(5);
-	private final TerminalDetector detectorLoop= new TerminalDetector();;
-	private final ErrorLogger errorLogger = new ErrorLogger();;
+	private final ScheduledThreadPoolExecutor executorService = new ScheduledThreadPoolExecutor(5);
+	private final TerminalDetector detectorLoop = new TerminalDetector();
+	private final ErrorLogger errorLogger = new ErrorLogger();
 	private final Object[] synchronizer = new Object[0];
 	private final Keyboard keyboard = new Keyboard();
-	private final Reconnector reconnector = new Reconnector(this, 2); // Reconnect every two seconds;
+	private final Reconnector reconnector = new Reconnector(this, 2); // Reconnect every two seconds
+
 	private final Status status;
 
 	private String oldUid;

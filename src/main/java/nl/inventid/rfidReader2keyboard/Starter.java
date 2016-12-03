@@ -1,7 +1,6 @@
 package nl.inventid.rfidReader2keyboard;
 
 import java.security.NoSuchAlgorithmException;
-import java.security.NoSuchProviderException;
 import java.util.Arrays;
 import java.util.Optional;
 
@@ -21,6 +20,7 @@ public class Starter {
 		boolean withGui = !Arrays.stream(args).filter(s -> NO_GUI_FLAG.equals(s)).findAny().isPresent();
 		Starter.systemStatus = new Status();
 
+		System.out.println("Will start with a gui: " + withGui);
 		if(withGui) {
 			// start the gui
 			GUI gui = new GUI(systemStatus);
