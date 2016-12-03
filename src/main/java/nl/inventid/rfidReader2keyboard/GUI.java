@@ -30,7 +30,7 @@ public class GUI {
 		frame = new JFrame();
 		frame.setBounds(frameRectangle());
 		frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-		frame.getContentPane().setLayout(new FlowLayout());
+		frame.getContentPane().setLayout(new GridLayout(2,1));
 
 		textLabel = new JLabel(statusString());
 		textLabel.setForeground(Color.BLACK);
@@ -97,7 +97,7 @@ public class GUI {
 
 	private String statusString() {
 		if(!systemStatus.isRunning()) {
-			return "System is not active";
+			return "RFID scanning system is not active";
 		}
 		// System is active
 		if(!systemStatus.isFoundReader()) {
