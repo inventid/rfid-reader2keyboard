@@ -1,4 +1,4 @@
-package nl.inventid.rfidReader2keyboard;
+package nl.inventid.rfidReader2keyboard.reader;
 
 import javax.smartcardio.CommandAPDU;
 

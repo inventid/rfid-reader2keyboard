@@ -1,4 +1,4 @@
-package nl.inventid.rfidReader2keyboard;
+package nl.inventid.rfidReader2keyboard.reader;
 
 import javax.smartcardio.Card;
 import javax.smartcardio.CardChannel;
@@ -32,6 +32,7 @@ import com.google.common.primitives.Bytes;
 import jnasmartcardio.Smartcardio;
 import lombok.Getter;
 import lombok.Setter;
+import nl.inventid.rfidReader2keyboard.Status;
 import org.apache.commons.codec.binary.Hex;
 
 /**
@@ -40,17 +41,16 @@ import org.apache.commons.codec.binary.Hex;
  */
 public class Read implements Runnable {
 
-	// Some actual class stuff
-	private static final List<String> TERMINAL_PREFERENCES = new ArrayList<>();
-	private static final Map<String, Integer> errorMap = new HashMap<>();
+	private final List<String> TERMINAL_PREFERENCES = new ArrayList<>();
+	private final Map<String, Integer> errorMap = new HashMap<>();
 
-	private static ScheduledThreadPoolExecutor executorService = new ScheduledThreadPoolExecutor(5);
-	private static TerminalDetector detectorLoop = new TerminalDetector();
-	private static ErrorLogger errorLogger = new ErrorLogger();
-
+	private final ScheduledThreadPoolExecutor executorService  = new ScheduledThreadPoolExecutor(5);
+	private final TerminalDetector detectorLoop= new TerminalDetector();;
+	private final ErrorLogger errorLogger = new ErrorLogger();;
 	private final Object[] synchronizer = new Object[0];
-	private final Keyboard keyboard;
-	private final Reconnector reconnector;
+	private final Keyboard keyboard = new Keyboard();
+	private final Reconnector reconnector = new Reconnector(this, 2); // Reconnect every two seconds;
+	private final Status status;
 
 	private String oldUid;
 	private CardTerminal terminal;
@@ -58,44 +58,15 @@ public class Read implements Runnable {
 
 	@Getter
 	@Setter
-	private Instant lastAction;
+	private Instant lastAction = Instant.now();
 	private String usedCardTerminalName;
-
-	public static void main(String[] args) throws NoSuchProviderException, NoSuchAlgorithmException {
-		System.out.println("Starting rfid-reader2keyboard");
-
-		Security.insertProviderAt(new Smartcardio(), 1);
-		TerminalFactory.getInstance("PC/SC", null);
-
-		System.out.println("The following terminals were detected:");
-		System.out.println(Read.listTerminals());
-
-		System.out.println();
-		System.out.println("inventid RFID capturing is currently active. Close this dialog to deactivate.");
-		System.out.println(
-				"The most likely reason you see this is in order to resolve any issue you ay have found. Please follow"
-						+ " the instructions of inventid support and send these lines to the given email address");
-
-		executorService.scheduleAtFixedRate(errorLogger, 10, 30, TimeUnit.SECONDS);
-		executorService.scheduleAtFixedRate(detectorLoop, 10, 15, TimeUnit.SECONDS);
-
-		Read reader = new Read();
-		reader.startRunning();
-
-		Runtime.getRuntime().addShutdownHook(new Thread() {
-			public void run() {
-				executorService.shutdownNow();
-				System.out.println("inventid RFID capturing is now inactive. You can close this dialog");
-			}
-		});
-	}
 
 	/**
 	 * Get the currently connected terminals
 	 *
 	 * @return the list of found terminals
 	 */
-	public static List<CardTerminal> listTerminals() {
+	private static List<CardTerminal> listTerminals() {
 		// show the list of available terminals
 		try {
 			return TerminalFactory.getDefault().terminals().list();
@@ -105,15 +76,51 @@ public class Read implements Runnable {
 		}
 	}
 
-	public Read() {
+	public Read(Status status) throws NoSuchAlgorithmException {
+		this.status = status;
 		TERMINAL_PREFERENCES.add("ACS ACR122U PICC Interface"); // Best match
 		TERMINAL_PREFERENCES.add("ACR122"); // That'll do (Windows does not include the U)
 		TERMINAL_PREFERENCES.add(""); // Fuck, attach with anything (SHOULD BE LAST)
 
-		reconnector = new Reconnector(this, 2); // Reconnect every two seconds
-		keyboard = new Keyboard();
-		lastAction = Instant.now();
+		System.out.println("Starting rfid-reader2keyboard");
+		status.setRunning(true);
+
+		Security.insertProviderAt(new Smartcardio(), 1);
+		TerminalFactory.getInstance("PC/SC", null);
+
+		System.out.println("The following terminals were detected:");
+		System.out.println(Read.listTerminals());
+		status.setTerminalsDetected(true);
+
+		System.out.println();
+		System.out.println("inventid RFID capturing is currently active. Close this dialog to deactivate.");
+		System.out.println(
+				"The most likely reason you see this is in order to resolve any issue you ay have found. Please follow"
+						+ " the instructions of inventid support and send these lines to the given email address");
+
+		executorService.scheduleAtFixedRate(errorLogger, 10, 30, TimeUnit.SECONDS);
+		executorService.scheduleAtFixedRate(detectorLoop, 10, 15, TimeUnit.SECONDS);
+		status.setSchedulersStarted(true);
+
 		determineCardTerminalToUse();
+
+		status.setReaderStarted(true);
+		this.startRunning();
+		status.setReaderRunning(true);
+		status.setRunning(true);
+	}
+
+	public void stop() {
+		System.out.println("Stopping the RFID reading");
+		status.setRunning(false);
+
+		executorService.shutdownNow();
+		status.setReaderRunning(false);
+		status.setReaderStarted(false);
+		status.setSchedulersStarted(false);
+		status.setTerminalsDetected(false);
+
+		System.out.println("inventid RFID capturing is now inactive. You can close this dialog");
 	}
 
 	/**
@@ -137,6 +144,7 @@ public class Read implements Runnable {
 					for (int i = 0; i < terminals.size(); i++) {
 						if (terminals.get(i).getName().contains(requiredTerminal)) {
 							usedCardTerminalName = terminals.get(i).getName();
+							status.setFoundReader(true);
 							return;
 						}
 					}
@@ -156,7 +164,7 @@ public class Read implements Runnable {
 	 *
 	 * @return a valid CardTerminal or halts the system if no match can be found
 	 */
-	public void findAndConnectToTerminal() {
+	private void findAndConnectToTerminal() {
 		try {
 			synchronized (synchronizer) {
 				// show the list of available terminals
@@ -311,7 +319,7 @@ public class Read implements Runnable {
 	/**
 	 * This is a very stupid innerclass, which simply prints the errorMap of the main class every 60 seconds
 	 */
-	private static class ErrorLogger implements Runnable {
+	private class ErrorLogger implements Runnable {
 		public void run() {
 			System.out.println("Error map: " + errorMap.entrySet());
 			System.out.println("Executorpool runnables: " + executorService.getQueue());

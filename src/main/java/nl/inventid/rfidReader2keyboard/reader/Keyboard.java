@@ -1,4 +1,4 @@
-package nl.inventid.rfidReader2keyboard;
+package nl.inventid.rfidReader2keyboard.reader;
 
 import java.awt.*;
 import java.awt.event.KeyEvent;
