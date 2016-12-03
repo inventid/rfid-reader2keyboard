@@ -9,7 +9,7 @@ import lombok.ToString;
  * This class functions as a global status class which communicates the status between the reader and the gui
  */
 @ToString
-public class Status {
+public class SystemStatus {
 
 	@Getter
 	private boolean running;
@@ -32,9 +32,8 @@ public class Status {
 	private Optional<Runnable> onChangeAction = Optional.empty();
 
 	public void onChange(Runnable action) {
-		this.onChangeAction = Optional.of(action);
+		this.onChangeAction = Optional.ofNullable(action);
 	}
-
 
 	public void setRunning(boolean running) {
 		this.running = running;

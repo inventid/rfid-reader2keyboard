@@ -11,7 +11,7 @@ public class Keyboard {
 	private Robot robot;
 
 	/**
-	 * Instanciates a new KeyBoard
+	 * Instanciates a new Keyboard
 	 */
 	public Keyboard() {
 		try {
@@ -25,7 +25,7 @@ public class Keyboard {
 	}
 
 	/**
-	 * Instanciates a new KeyBoard
+	 * Instanciates a new Keyboard
 	 *
 	 * @param robot an existing Robot operator
 	 */

@@ -9,28 +9,38 @@ import java.awt.*;
  */
 public class GUI {
 
-	public static final String STOP = "Stop";
-	private static final String START = "Start";
-	public static final int OFFSET_X = 10;
-	public static final int OFFSET_Y = 10;
-	public static final int WIDTH = 300;
-	public static final int HEIGHT = 80;
-	private final Status systemStatus;
+	enum ButtonStatus {
+		STOP("Stop"),
+		START("Start");
 
-	private JFrame frame;
-	private JLabel textLabel;
-	private JButton button;
-	private String buttonActionType;
+		private final String buttonValue;
+
+		ButtonStatus(String s) {
+			buttonValue = s;
+		}
+	}
+
+	private static final int OFFSET_X = 10;
+	private static final int OFFSET_Y = 10;
+	private static final int WIDTH = 300;
+	private static final int HEIGHT = 80;
+
+	private final SystemStatus systemStatus;
+	private final JFrame frame;
+	private final JLabel textLabel;
+	private final JButton button;
+
+	private ButtonStatus buttonActionType;
 	private Runnable onStartPressedAction;
 	private Runnable onStopPressedAction;
 
-	public GUI(Status systemStatus) {
+	public GUI(SystemStatus systemStatus, boolean shouldAutostart) {
 		this.systemStatus = systemStatus;
 
 		frame = new JFrame();
 		frame.setBounds(frameRectangle());
 		frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-		frame.getContentPane().setLayout(new GridLayout(2,1));
+		frame.getContentPane().setLayout(new GridLayout(2, 1));
 
 		textLabel = new JLabel(statusString());
 		textLabel.setForeground(Color.BLACK);
@@ -43,15 +53,17 @@ public class GUI {
 		button.setOpaque(true);
 		button.setHorizontalAlignment(JLabel.CENTER);
 		button.addActionListener(e -> {
-			if(buttonActionType.equals(START)) {
+			if (buttonActionType == ButtonStatus.START) {
 				onStartPressedAction.run();
-				setButtonText(STOP);
-				buttonActionType = STOP;
-			} else if(buttonActionType.equals(STOP)) {
+				setButtonText(ButtonStatus.STOP.buttonValue);
+				buttonActionType = ButtonStatus.STOP;
+			}
+			else if (buttonActionType == ButtonStatus.STOP) {
 				onStopPressedAction.run();
-				setButtonText(START);
-				buttonActionType = START;
-			} else {
+				setButtonText(ButtonStatus.START.buttonValue);
+				buttonActionType = ButtonStatus.START;
+			}
+			else {
 				System.err.println("Undefined action detected");
 				System.err.println(systemStatus);
 				return;
@@ -62,15 +74,20 @@ public class GUI {
 		frame.getContentPane().add(button);
 		frame.setVisible(true);
 		setLabelText(statusString());
-		setButtonText(STOP);
-		buttonActionType = STOP;
+		if(shouldAutostart) {
+			setButtonText(ButtonStatus.STOP.buttonValue);
+			buttonActionType = ButtonStatus.STOP;
+		} else {
+			setButtonText(ButtonStatus.START.buttonValue);
+			buttonActionType = ButtonStatus.START;
+		}
 		frame.repaint();
 		systemStatus.onChange(() -> setLabelText(statusString()));
 	}
 
 	private Rectangle frameRectangle() {
 		Dimension resolution = Toolkit.getDefaultToolkit().getScreenSize();
-		int frameLocationX = (int) resolution.getWidth() - WIDTH - OFFSET_Y;
+		int frameLocationX = (int) resolution.getWidth() - WIDTH - OFFSET_X;
 		int frameLocationY = (int) resolution.getHeight() - HEIGHT - OFFSET_Y;
 
 		return new Rectangle(frameLocationX, frameLocationY, WIDTH, HEIGHT);
@@ -96,11 +113,11 @@ public class GUI {
 	}
 
 	private String statusString() {
-		if(!systemStatus.isRunning()) {
+		if (!systemStatus.isRunning()) {
 			return "RFID scanning system is not active";
 		}
 		// System is active
-		if(!systemStatus.isFoundReader()) {
+		if (!systemStatus.isFoundReader()) {
 			return "Could not find an appropriate RFID reader";
 		}
 		if (systemStatus.isReaderRunning()) {
