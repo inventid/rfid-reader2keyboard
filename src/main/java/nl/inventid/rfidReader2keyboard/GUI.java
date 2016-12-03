@@ -11,6 +11,10 @@ public class GUI {
 
 	public static final String STOP = "Stop";
 	private static final String START = "Start";
+	public static final int OFFSET_X = 10;
+	public static final int OFFSET_Y = 10;
+	public static final int WIDTH = 300;
+	public static final int HEIGHT = 80;
 	private final Status systemStatus;
 
 	private JFrame frame;
@@ -24,7 +28,7 @@ public class GUI {
 		this.systemStatus = systemStatus;
 
 		frame = new JFrame();
-		frame.setBounds(10, 10, 300, 80);
+		frame.setBounds(frameRectangle());
 		frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 		frame.getContentPane().setLayout(new FlowLayout());
 
@@ -62,6 +66,14 @@ public class GUI {
 		buttonActionType = STOP;
 		frame.repaint();
 		systemStatus.onChange(() -> setLabelText(statusString()));
+	}
+
+	private Rectangle frameRectangle() {
+		Dimension resolution = Toolkit.getDefaultToolkit().getScreenSize();
+		int frameLocationX = (int) resolution.getWidth() - WIDTH - OFFSET_Y;
+		int frameLocationY = (int) resolution.getHeight() - HEIGHT - OFFSET_Y;
+
+		return new Rectangle(frameLocationX, frameLocationY, WIDTH, HEIGHT);
 	}
 
 	public void onStartPressed(Runnable action) {
