@@ -3,34 +3,25 @@ package nl.inventid.rfidReader2keyboard.reader;
 import java.awt.*;
 import java.awt.event.KeyEvent;
 
+import lombok.SneakyThrows;
+
 /**
  * Class handles the "typing" of the fetched data from the chip to the terminal
  */
 public class Keyboard {
 
-	private Robot robot;
+	private static final int AUTO_DELAY_MS = 3;
+
+	private final Robot robot;
 
 	/**
 	 * Instanciates a new Keyboard
 	 */
+	@SneakyThrows
 	public Keyboard() {
-		try {
-			this.robot = new Robot();
-		}
-		catch (Exception e) {
-			System.err.println("Something went wrong when trying to initizalize the type robot");
-			e.printStackTrace();
-			System.exit(888);
-		}
-	}
-
-	/**
-	 * Instanciates a new Keyboard
-	 *
-	 * @param robot an existing Robot operator
-	 */
-	public Keyboard(Robot robot) {
-		this.robot = robot;
+		this.robot = new Robot();
+		robot.setAutoDelay(AUTO_DELAY_MS);
+		System.out.println("Robot initialized with an autodelay of " + robot.getAutoDelay() + "ms");
 	}
 
 	/**
@@ -51,7 +42,7 @@ public class Keyboard {
 	 *
 	 * @param character the character to type
 	 */
-	public void type(char character) {
+	private void type(char character) {
 		switch (character) {
 			case 'a':
 				doType(KeyEvent.VK_A);
@@ -373,5 +364,6 @@ public class Keyboard {
 		robot.keyPress(keyCodes[offset]);
 		doType(keyCodes, offset + 1, length - 1);
 		robot.keyRelease(keyCodes[offset]);
+		robot.waitForIdle();
 	}
 }

@@ -238,7 +238,6 @@ public class Reader {
 					return;
 				}
 				catch (ExecutionException e) {
-					System.err.println("Something went wrong while executing the Callable");
 					throw e.getCause();
 				}
 				finally {
