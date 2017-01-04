@@ -37,7 +37,7 @@
 				<artifactId>exec-maven-plugin</artifactId>
 				<version>1.4.0</version>
 				<configuration>
-					<mainClass>nl.inventid.rfidReader2keyboard.Read</mainClass>
+					<mainClass>nl.inventid.rfidReader2keyboard.Starter</mainClass>
 				</configuration>
 			</plugin>
 			<plugin>
@@ -45,7 +45,7 @@
 				<configuration>
 					<archive>
 						<manifest>
-							<mainClass>nl.inventid.rfidReader2keyboard.Read</mainClass>
+							<mainClass>nl.inventid.rfidReader2keyboard.Starter</mainClass>
 						</manifest>
 					</archive>
 					<descriptorRefs>
@@ -70,7 +70,7 @@
 					<archive>
 						<manifest>
 							<addClasspath>true</addClasspath>
-							<mainClass>nl.inventid.rfidReader2keyboard.Read</mainClass>
+							<mainClass>nl.inventid.rfidReader2keyboard.Starter</mainClass>
 						</manifest>
 					</archive>
 				</configuration>

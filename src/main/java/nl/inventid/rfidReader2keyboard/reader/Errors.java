@@ -1,4 +1,4 @@
-package nl.inventid.rfidReader2keyboard;
+package nl.inventid.rfidReader2keyboard.reader;
 
 public class Errors {
 	// Annoyingly catching java errors which are inconsistent across platforms
